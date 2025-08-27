@@ -2,6 +2,7 @@ package com.example.mydayplanner.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.mydayplanner.data.FileBackedTodoRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -18,7 +19,11 @@ data class HomeUiState(
 class HomeViewModel(
     private val repo: TodoRepository
 ) : ViewModel() {
-
+    init {
+        viewModelScope.launch {
+            if (repo is FileBackedTodoRepository) repo.initializeIfNeeded()
+        }
+    }
     val uiState: StateFlow<HomeUiState> =
         repo.todayTodos
             .map { HomeUiState(todos = it) }

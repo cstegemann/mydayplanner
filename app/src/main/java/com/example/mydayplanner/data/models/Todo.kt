@@ -3,6 +3,7 @@ package com.example.mydayplanner.data.models
 
 import java.util.UUID
 
+@kotlinx.serialization.Serializable
 data class Todo(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
