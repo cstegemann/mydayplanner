@@ -37,56 +37,48 @@ class PlainJsonTodoRepository(
     private var initialized = false
 
     suspend fun initializeIfNeeded() {
-        if (!initialized) { loadToday(); initialized = true }
+        if (!initialized) { ensureLoadedForToday(); initialized = true }
     }
 
-    private suspend fun loadToday() = withContext(io) {
-        val f = fileFor(todayKey())
-        if (f.exists()) {
-            val text = f.readText()
-            _today.value = json.decodeFromString<List<Todo>>(text)
-        } else {
-            _today.value = emptyList()
-        }
-        val todayFile = fileFor(todayKey())
+    private suspend fun ensureLoadedForToday() = withContext(io) {
+        val today = todayKey()
+        if (loadedDayKey == today) return@withContext
+
+        val todayFile = fileFor(today)
+
         val todayList: MutableList<Todo> = if (todayFile.exists()) {
             runCatching { json.decodeFromString<List<Todo>>(todayFile.readText()) }
                 .getOrElse { emptyList() }
                 .toMutableList()
         } else {
-            mutableListOf()
-        }
-
-        // Carry over only on first initialization
-        if (!initialized) {
+            // First touch of the day: build from yesterday's unfinished
             val yFile = fileFor(yesterdayKey())
-            if (yFile.exists()) {
-                val yTodos = runCatching { json.decodeFromString<List<Todo>>(yFile.readText()) }
+            val carry = if (yFile.exists()) {
+                runCatching { json.decodeFromString<List<Todo>>(yFile.readText()) }
                     .getOrElse { emptyList() }
+                    .asSequence()
+                    .filter { !it.done }
+                    .map { it.copy(done = false, completedAt = null) }
+                    .toList()
+            } else emptyList()
 
-                if (yTodos.isNotEmpty()) {
-                    // Build a set of existing IDs to avoid duplicates
-                    val existingIds = todayList.asSequence().map { it.id }.toHashSet()
-
-                    val carryOvers = yTodos.asSequence()
-                        .filter { !it.done }                         // only incomplete
-                        .filter { it.id !in existingIds }            // avoid dupes
-                        .map { it.copy(done = false, completedAt = null) } // reset state
-                        .toList()
-
-                    if (carryOvers.isNotEmpty()) {
-                        todayList += carryOvers
-                    }
-                }
+            carry.toMutableList().also {
+                // Persist a new (possibly empty) today file so we don't re-import later
+                val f = fileFor(today)
+                val tmp = File.createTempFile("today", ".tmp", dir)
+                tmp.writeText(json.encodeToString(ListSerializer(Todo.serializer()), it))
+                f.delete()
+                tmp.renameTo(f)
             }
         }
 
         _today.value = todayList
+        loadedDayKey = today
+    }
 
-        // If we synthesized/modified today's list (new file or carried over), persist it
-        // Write when: file didn't exist OR we added carryovers
-        val shouldPersist = !todayFile.exists() || (!initialized && todayList.isNotEmpty())
-        if (shouldPersist) saveToday()
+    private suspend fun withTodayLoaded(block: suspend () -> Unit) {
+        ensureLoadedForToday()
+        return block()
     }
 
     private suspend fun saveToday() = withContext(io) {
@@ -98,32 +90,38 @@ class PlainJsonTodoRepository(
         tmp.renameTo(f)
     }
 
-    override suspend fun add(text: String, important: Boolean) {
-        if (text.isBlank()) return
-        val new = _today.value + Todo(
-            id = java.util.UUID.randomUUID().toString(),
-            text = text.trim(),
-            done = false,
-            createdAt = System.currentTimeMillis(),
-            important = important
-        )
-        _today.value = new
-        saveToday()
-    }
-
-    override suspend fun toggle(id: String) {
-        val updated = _today.value.map { t ->
-            if (t.id == id) {
-                val nowDone = !t.done
-                t.copy(done = nowDone, completedAt = if (nowDone) System.currentTimeMillis() else null)
-            } else t
+    override suspend fun add(text: String, important: Boolean) = withContext(io) {
+        if (text.isBlank()) return@withContext
+        withTodayLoaded {
+            val newList = _today.value + Todo(
+                id = java.util.UUID.randomUUID().toString(),
+                text = text.trim(),
+                done = false,
+                createdAt = System.currentTimeMillis(),
+                important = important
+            )
+            _today.value = newList
+            saveToday()
         }
-        _today.value = updated
-        saveToday()
     }
 
-    override suspend fun remove(id: String) {
-        _today.value = _today.value.filterNot { it.id == id }
-        saveToday()
+    override suspend fun toggle(id: String) = withContext(io) {
+        withTodayLoaded {
+            val updated = _today.value.map { t ->
+                if (t.id == id) {
+                    val nowDone = !t.done
+                    t.copy(done = nowDone, completedAt = if (nowDone) System.currentTimeMillis() else null)
+                } else t
+            }
+            _today.value = updated
+            saveToday()
+        }
+    }
+
+    override suspend fun remove(id: String) = withContext(io) {
+        withTodayLoaded {
+            _today.value = _today.value.filterNot { it.id == id }
+            saveToday()
+        }
     }
 }
