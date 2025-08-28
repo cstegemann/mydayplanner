@@ -2,7 +2,7 @@ package com.example.mydayplanner.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.mydayplanner.data.FileBackedTodoRepository
+import com.example.mydayplanner.data.PlainJsonTodoRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -13,7 +13,8 @@ import com.example.mydayplanner.data.models.Todo
 
 data class HomeUiState(
     val todos: List<Todo> = emptyList(),
-    val input: String = ""
+    val input: String = "",
+    val inputImportant: Boolean = false
 )
 
 class HomeViewModel(
@@ -21,12 +22,18 @@ class HomeViewModel(
 ) : ViewModel() {
     init {
         viewModelScope.launch {
-            if (repo is FileBackedTodoRepository) repo.initializeIfNeeded()
+            if (repo is PlainJsonTodoRepository) repo.initializeIfNeeded()
         }
     }
     val uiState: StateFlow<HomeUiState> =
         repo.todayTodos
-            .map { HomeUiState(todos = it) }
+            .map { todos ->
+                val sorted = todos.sortedWith(
+                    compareBy<Todo> { it.done }
+                        .thenByDescending { it.important }
+                        .thenBy { it.createdAt }
+                )
+                HomeUiState(todos = sorted) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun onInputChange(value: String) {
@@ -34,14 +41,17 @@ class HomeViewModel(
         // we’ll expose a setter via a backing StateFlow, but here’s a simple pattern:
         _input = value
     }
+    fun onToggleImportantInput() { _inputImportant = !_inputImportant }
     private var _input: String = ""
+    private var _inputImportant: Boolean = false
     val input get() = _input
 
     fun add() = viewModelScope.launch {
         val text = _input.trim()
         if (text.isNotEmpty()) {
-            repo.add(text)
+            repo.add(text, important = _inputImportant)
             _input = "" // clear
+            _inputImportant = false
         }
     }
 

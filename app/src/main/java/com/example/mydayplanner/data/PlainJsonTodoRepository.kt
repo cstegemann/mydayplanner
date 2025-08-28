@@ -13,7 +13,7 @@ import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 
-class FileBackedTodoRepository(
+class PlainJsonTodoRepository(
     appContext: Context,
     private val io: CoroutineDispatcher = Dispatchers.IO
 ) : TodoRepository {
@@ -24,6 +24,9 @@ class FileBackedTodoRepository(
 
     private val zone = ZoneId.systemDefault()
     private fun todayKey(): String = LocalDate.now(zone).toString() // "2025-08-27"
+    private fun yesterdayKey(): String = LocalDate.now(zone).minusDays(1).toString()
+
+    private var loadedDayKey: String? = null
 
     private val dir: File = File(context.filesDir, "days").apply { mkdirs() }
 
@@ -45,6 +48,45 @@ class FileBackedTodoRepository(
         } else {
             _today.value = emptyList()
         }
+        val todayFile = fileFor(todayKey())
+        val todayList: MutableList<Todo> = if (todayFile.exists()) {
+            runCatching { json.decodeFromString<List<Todo>>(todayFile.readText()) }
+                .getOrElse { emptyList() }
+                .toMutableList()
+        } else {
+            mutableListOf()
+        }
+
+        // Carry over only on first initialization
+        if (!initialized) {
+            val yFile = fileFor(yesterdayKey())
+            if (yFile.exists()) {
+                val yTodos = runCatching { json.decodeFromString<List<Todo>>(yFile.readText()) }
+                    .getOrElse { emptyList() }
+
+                if (yTodos.isNotEmpty()) {
+                    // Build a set of existing IDs to avoid duplicates
+                    val existingIds = todayList.asSequence().map { it.id }.toHashSet()
+
+                    val carryOvers = yTodos.asSequence()
+                        .filter { !it.done }                         // only incomplete
+                        .filter { it.id !in existingIds }            // avoid dupes
+                        .map { it.copy(done = false, completedAt = null) } // reset state
+                        .toList()
+
+                    if (carryOvers.isNotEmpty()) {
+                        todayList += carryOvers
+                    }
+                }
+            }
+        }
+
+        _today.value = todayList
+
+        // If we synthesized/modified today's list (new file or carried over), persist it
+        // Write when: file didn't exist OR we added carryovers
+        val shouldPersist = !todayFile.exists() || (!initialized && todayList.isNotEmpty())
+        if (shouldPersist) saveToday()
     }
 
     private suspend fun saveToday() = withContext(io) {
@@ -56,13 +98,14 @@ class FileBackedTodoRepository(
         tmp.renameTo(f)
     }
 
-    override suspend fun add(text: String) {
+    override suspend fun add(text: String, important: Boolean) {
         if (text.isBlank()) return
         val new = _today.value + Todo(
             id = java.util.UUID.randomUUID().toString(),
             text = text.trim(),
             done = false,
-            createdAt = System.currentTimeMillis()
+            createdAt = System.currentTimeMillis(),
+            important = important
         )
         _today.value = new
         saveToday()

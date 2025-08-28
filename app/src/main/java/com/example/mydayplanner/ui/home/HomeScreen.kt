@@ -16,6 +16,9 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.di.AppGraph
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Star
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,6 +28,7 @@ fun HomeScreen(
 ) {
     val ui by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf(viewModel.input) }
+    var inputImportant by remember { mutableStateOf(ui.inputImportant) }
 
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
@@ -37,6 +41,18 @@ fun HomeScreen(
         ) {
             // Input row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconToggleButton(
+                    checked = inputImportant,
+                    onCheckedChange = {
+                        inputImportant = it
+                        viewModel.onToggleImportantInput()
+                    }
+                ) {
+                    if (inputImportant)
+                        Icon(Icons.Filled.Star, contentDescription = "Important")
+                    else
+                        Icon(Icons.Outlined.Star, contentDescription = "Mark important")
+                }
                 OutlinedTextField(
                     modifier = Modifier.weight(1f),
                     value = input,
@@ -71,7 +87,14 @@ fun HomeScreen(
 
 @Composable
 private fun TodoRow(todo: Todo, onToggle: () -> Unit, onRemove: () -> Unit) {
-    Surface(tonalElevation = 1.dp, shape = MaterialTheme.shapes.medium) {
+    val bg = if (todo.important)
+        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f) // soft yellow-ish (dynamic theme)
+    else
+        MaterialTheme.colorScheme.surface
+    Surface(
+        color = bg,
+        tonalElevation = if (todo.important) 2.dp else 1.dp,
+        shape = MaterialTheme.shapes.medium) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -79,6 +102,16 @@ private fun TodoRow(todo: Todo, onToggle: () -> Unit, onRemove: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Checkbox(checked = todo.done, onCheckedChange = { onToggle() })
+
+            // ⭐️ Important icon, if flagged
+            if (todo.important) {
+                Icon(
+                    imageVector = Icons.Filled.Star,
+                    contentDescription = "Important",
+                    tint = MaterialTheme.colorScheme.tertiary
+                )
+            }
+
             Column(Modifier.weight(1f)) {
                 Text(
                     text = todo.text,

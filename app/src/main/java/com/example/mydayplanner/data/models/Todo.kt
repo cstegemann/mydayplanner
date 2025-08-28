@@ -10,5 +10,6 @@ data class Todo(
     val done: Boolean = false,
     val timePredicted: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
-    val completedAt: Long? = null
+    val completedAt: Long? = null,
+    val important: Boolean = false
 )

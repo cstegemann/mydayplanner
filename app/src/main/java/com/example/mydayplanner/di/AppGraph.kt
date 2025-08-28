@@ -1,7 +1,7 @@
 package com.example.mydayplanner.di
 
 import android.content.Context
-import com.example.mydayplanner.data.FileBackedTodoRepository
+import com.example.mydayplanner.data.PlainJsonTodoRepository
 import com.example.mydayplanner.data.TodoRepository
 
 object AppGraph {
@@ -9,6 +9,6 @@ object AppGraph {
         private set
 
     fun init(context:Context) {
-        todoRepo = FileBackedTodoRepository(context)
+        todoRepo = PlainJsonTodoRepository(context)
     }
 }
