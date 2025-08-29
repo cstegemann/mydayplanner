@@ -14,7 +14,9 @@ import com.example.mydayplanner.data.models.Todo
 data class HomeUiState(
     val todos: List<Todo> = emptyList(),
     val input: String = "",
-    val inputImportant: Boolean = false
+    val inputImportant: Boolean = false,
+    val inputEstimateMinutes: Int = 15,
+    val inputProject: String = "Other"
 )
 
 class HomeViewModel(
@@ -37,21 +39,31 @@ class HomeViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun onInputChange(value: String) {
-        // keep input in a separate StateFlow if you prefer; for brevity we store it ad hoc:
-        // we’ll expose a setter via a backing StateFlow, but here’s a simple pattern:
         _input = value
     }
     fun onToggleImportantInput() { _inputImportant = !_inputImportant }
     private var _input: String = ""
     private var _inputImportant: Boolean = false
+    private var _inputEstimate = 15
+    private var _inputProject = "Other"
     val input get() = _input
+
+    fun onSetEstimate(minutes: Int) { _inputEstimate = minutes }
+    fun onSetProject(project: String) { _inputProject = project }
 
     fun add() = viewModelScope.launch {
         val text = _input.trim()
         if (text.isNotEmpty()) {
-            repo.add(text, important = _inputImportant)
+            repo.add(
+                text = text,
+                important = _inputImportant,
+                estimateMinutes = _inputEstimate,
+                project = _inputProject
+            )
             _input = "" // clear
-            _inputImportant = false
+            //_inputImportant = false
+            //_inputEstimate = 15
+            //_inputProject = "Other"
         }
     }
 

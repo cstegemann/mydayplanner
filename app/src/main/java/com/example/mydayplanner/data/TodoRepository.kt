@@ -6,7 +6,12 @@ import kotlinx.coroutines.withContext
 
 interface TodoRepository {
     val todayTodos: Flow<List<Todo>>
-    suspend fun add(text: String, important: Boolean = false)
+    suspend fun add(
+        text: String,
+        important: Boolean = false,
+        estimateMinutes: Int = 15,
+        project: String = "Other"
+    )
     suspend fun toggle(id: String)
     suspend fun remove(id: String)
 }

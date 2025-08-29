@@ -11,5 +11,7 @@ data class Todo(
     val timePredicted: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
-    val important: Boolean = false
+    val important: Boolean = false,
+    val estimateMinutes: Int = 15,
+    val project: String = "Other"
 )

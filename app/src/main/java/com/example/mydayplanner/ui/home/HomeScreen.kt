@@ -1,5 +1,6 @@
 package com.example.mydayplanner.ui.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,8 +18,26 @@ import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.di.AppGraph
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+
+private val TimeEstimates = listOf(15, 30, 45, 60, 90, 120, 180)
+private fun formatEstimate(mins: Int) = when (mins) {
+    60 -> "1 h"
+    90 -> "1.5 h"
+    120 -> "2 h"
+    180 -> "3 h"
+    else -> "$mins min"
+}
+
+private val CurrentProjects = listOf("Other", "TIME", "GW")
+
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,6 +48,8 @@ fun HomeScreen(
     val ui by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf(viewModel.input) }
     var inputImportant by remember { mutableStateOf(ui.inputImportant) }
+    var estimate by remember { mutableIntStateOf(ui.inputEstimateMinutes) }
+    var project by remember { mutableStateOf(ui.inputProject) }
 
     Scaffold(
         topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
@@ -51,7 +72,11 @@ fun HomeScreen(
                     if (inputImportant)
                         Icon(Icons.Filled.Star, contentDescription = "Important")
                     else
-                        Icon(Icons.Outlined.Star, contentDescription = "Mark important")
+                        Icon(
+                            Icons.Outlined.Star,
+                            contentDescription = "Mark important",
+                            tint= Color.LightGray
+                        )
                 }
                 OutlinedTextField(
                     modifier = Modifier.weight(1f),
@@ -63,6 +88,77 @@ fun HomeScreen(
                     keyboardActions = KeyboardActions(onDone = { viewModel.add(); input = "" })
                 )
                 Button(onClick = { viewModel.add(); input = "" }) { Text("Add") }
+            }
+            Spacer(Modifier.height(8.dp))
+            // Row: two exposed dropdowns (Estimate, Project)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // --- Estimate ---
+                var estExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = estExpanded,
+                    onExpandedChange = { estExpanded = !estExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = formatEstimate(estimate),
+                        onValueChange = {},
+                        label = { Text("Estimate") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = estExpanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = estExpanded,
+                        onDismissRequest = { estExpanded = false }
+                    ) {
+                        TimeEstimates.forEach { mins ->
+                            DropdownMenuItem(
+                                text = { Text(formatEstimate(mins)) },
+                                onClick = {
+                                    estExpanded = false
+                                    estimate = mins
+                                    viewModel.onSetEstimate(mins)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // --- Project ---
+                var projExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = projExpanded,
+                    onExpandedChange = { projExpanded = !projExpanded },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = project,
+                        onValueChange = {},
+                        label = { Text("Project") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projExpanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = projExpanded,
+                        onDismissRequest = { projExpanded = false }
+                    ) {
+                        CurrentProjects.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text(p) },
+                                onClick = {
+                                    projExpanded = false
+                                    project = p
+                                    viewModel.onSetProject(p)
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -94,32 +190,76 @@ private fun TodoRow(todo: Todo, onToggle: () -> Unit, onRemove: () -> Unit) {
     Surface(
         color = bg,
         tonalElevation = if (todo.important) 2.dp else 1.dp,
-        shape = MaterialTheme.shapes.medium) {
+        shape = MaterialTheme.shapes.medium
+    ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(12.dp) // ← padding applies to both rows now
         ) {
-            Checkbox(checked = todo.done, onCheckedChange = { onToggle() })
-
-            // ⭐️ Important icon, if flagged
-            if (todo.important) {
-                Icon(
-                    imageVector = Icons.Filled.Star,
-                    contentDescription = "Important",
-                    tint = MaterialTheme.colorScheme.tertiary
-                )
+            // ── Row 1: checkbox + star + main text ───────────────────────────────
+            Column(
+            ) {
+                Checkbox(checked = todo.done, onCheckedChange = { onToggle() })
             }
+            Column(
+                Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (todo.important) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = "Important",
+                            tint = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
 
-            Column(Modifier.weight(1f)) {
-                Text(
-                    text = todo.text,
-                    style = if (todo.done) MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    else MaterialTheme.typography.bodyLarge
-                )
+                    // Main text expands to take the remaining space
+                    Text(
+                        text = todo.text,
+                        modifier = Modifier.weight(1f),
+                        style = if (todo.done)
+                            MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        else
+                            MaterialTheme.typography.bodyLarge
+                    )
+
+                    // Optional delete button/icon
+                    IconButton(onClick = onRemove) { Icon(Icons.Outlined.Delete, contentDescription = "Delete") }
+                }
+
+                // ── Spacer between lines ─────────────────────────────────────────────
+                Spacer(Modifier.height(6.dp))
+
+                // ── Row 2: small metadata line (estimate • project) ─────────────────
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // keep these compact & subtle
+                    Text(
+                        text = formatEstimate(todo.estimateMinutes), // e.g., "15 min" / "1.5 h"
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = todo.project,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f) // let it ellipsize if long
+                    )
+                }
             }
-            TextButton(onClick = onRemove) { Text("Delete") }
         }
     }
 }
@@ -131,3 +271,55 @@ private fun homeVmFactory(repo: TodoRepository): ViewModelProvider.Factory =
             return HomeViewModel(repo) as T
         }
     }
+
+//@OptIn(ExperimentalMaterialApi::class)
+@Composable
+private fun DismissibleTodoRow(
+    todo: Todo,
+    onToggle: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState (
+        confirmValueChange = {
+            if (it == SwipeToDismissBoxValue.StartToEnd || it == SwipeToDismissBoxValue.EndToStart) {
+                onRemove()
+                true // consume
+            } else false
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            when (dismissState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Remove item",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Red)
+                            .wrapContentSize(Alignment.CenterEnd)
+                            .padding(12.dp),
+                        tint = Color.White
+                    )
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Remove item",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Red)
+                            .wrapContentSize(Alignment.CenterEnd)
+                            .padding(12.dp),
+                        tint = Color.White
+                    )
+                }
+                SwipeToDismissBoxValue.Settled -> {}
+            }
+        }
+    ){
+        TodoRow(todo = todo, onToggle = onToggle, onRemove = onRemove)
+    }
+}

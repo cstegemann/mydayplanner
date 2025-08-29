@@ -24,7 +24,7 @@ class PlainJsonTodoRepository(
 
     private val zone = ZoneId.systemDefault()
     private fun todayKey(): String = LocalDate.now(zone).toString() // "2025-08-27"
-    private fun yesterdayKey(): String = LocalDate.now(zone).minusDays(1).toString()
+    private fun lastActiveDayKey(d: Long): String = LocalDate.now(zone).minusDays(d).toString()
 
     private var loadedDayKey: String? = null
 
@@ -52,7 +52,13 @@ class PlainJsonTodoRepository(
                 .toMutableList()
         } else {
             // First touch of the day: build from yesterday's unfinished
-            val yFile = fileFor(yesterdayKey())
+            var i: Long = 1
+            var yFile = fileFor(lastActiveDayKey(i))
+            val maxBack = 30
+            while (!yFile.exists() && i <= maxBack){
+                i++
+                yFile = fileFor(lastActiveDayKey(i))
+            }
             val carry = if (yFile.exists()) {
                 runCatching { json.decodeFromString<List<Todo>>(yFile.readText()) }
                     .getOrElse { emptyList() }
@@ -63,6 +69,12 @@ class PlainJsonTodoRepository(
             } else emptyList()
 
             carry.toMutableList().also {
+                it.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project="META"))
+                it.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project="META"))
+                it.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project="META"))
+                it.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project="META"))
+                it.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project="META"))
+                it.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project="META"))
                 // Persist a new (possibly empty) today file so we don't re-import later
                 val f = fileFor(today)
                 val tmp = File.createTempFile("today", ".tmp", dir)
@@ -90,7 +102,12 @@ class PlainJsonTodoRepository(
         tmp.renameTo(f)
     }
 
-    override suspend fun add(text: String, important: Boolean) = withContext(io) {
+    override suspend fun add(
+        text: String,
+        important: Boolean,
+        estimateMinutes: Int,
+        project: String
+    ) = withContext(io) {
         if (text.isBlank()) return@withContext
         withTodayLoaded {
             val newList = _today.value + Todo(
@@ -98,7 +115,9 @@ class PlainJsonTodoRepository(
                 text = text.trim(),
                 done = false,
                 createdAt = System.currentTimeMillis(),
-                important = important
+                important = important,
+                estimateMinutes = estimateMinutes,
+                project = project
             )
             _today.value = newList
             saveToday()
