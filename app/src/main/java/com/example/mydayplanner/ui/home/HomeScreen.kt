@@ -1,6 +1,5 @@
 package com.example.mydayplanner.ui.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,7 +17,6 @@ import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.di.AppGraph
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Star
@@ -52,7 +50,8 @@ fun HomeScreen(
     var project by remember { mutableStateOf(ui.inputProject) }
 
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
+        //topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
+        topBar = { RemainingHoursTopBar(ui.todos) }
     ) { padding ->
         Column(
             modifier = modifier
@@ -106,7 +105,7 @@ fun HomeScreen(
                         label = { Text("Estimate") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = estExpanded) },
                         modifier = Modifier
-                            .menuAnchor()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth()
                     )
                     ExposedDropdownMenu(
@@ -140,7 +139,7 @@ fun HomeScreen(
                         label = { Text("Project") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projExpanded) },
                         modifier = Modifier
-                            .menuAnchor()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth()
                     )
                     ExposedDropdownMenu(
@@ -172,7 +171,8 @@ fun HomeScreen(
                         TodoRow(
                             todo = todo,
                             onToggle = { viewModel.toggle(todo.id) },
-                            onRemove = { viewModel.remove(todo.id) }
+                            onRemove = { viewModel.remove(todo.id) },
+                            onPushToTomorrow = {viewModel.togglePushToTomorrow(todo.id)}
                         )
                     }
                 }
@@ -181,10 +181,57 @@ fun HomeScreen(
     }
 }
 
+private fun formatMinutesHM(totalMinutes: Int): String {
+    val h = totalMinutes / 60
+    val m = totalMinutes % 60
+    return "$h:${m.toString().padStart(2, '0')}"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TodoRow(todo: Todo, onToggle: () -> Unit, onRemove: () -> Unit) {
+fun RemainingHoursTopBar(todos: List<Todo>) {
+    // Recompute whenever `todos` changes
+    val workedMinutes by remember(todos) {
+        derivedStateOf {
+            todos.asSequence()
+                .filter { it.done && it.project != "META" }
+                .sumOf { it.estimateMinutes }
+        }
+    }
+
+    val doneText = if (workedMinutes > 0)
+        "${formatMinutesHM(workedMinutes)} h done"
+    else
+        "Let's start!"
+
+    val remainingMinutes by remember(todos) {
+        derivedStateOf {
+            todos.asSequence()
+                .filter { !it.done && !it.pushedToTomorrow && it.project !in listOf("META", "Other") }
+                .sumOf { it.estimateMinutes }
+        }
+    }
+
+    val remainingText = if (remainingMinutes > 0)
+        "${formatMinutesHM(remainingMinutes)} h left"
+    else
+        "All done 🎉"
+
+    CenterAlignedTopAppBar(
+        title = {
+            Text("$doneText • $remainingText")
+        }
+    )
+}
+
+@Composable
+private fun TodoRow(todo: Todo, onToggle: () -> Unit,
+                    onRemove: () -> Unit,
+                    onPushToTomorrow: () -> Unit) {
     val bg = if (todo.important)
-        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.45f) // soft yellow-ish (dynamic theme)
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f) // soft yellow-ish (dynamic theme)
+    else if (todo.pushedToTomorrow)
+        Color.Gray
     else
         MaterialTheme.colorScheme.surface
     Surface(
@@ -242,22 +289,35 @@ private fun TodoRow(todo: Todo, onToggle: () -> Unit, onRemove: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // keep these compact & subtle
-                    Text(
-                        text = formatEstimate(todo.estimateMinutes), // e.g., "15 min" / "1.5 h"
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "•",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (todo.project != "META") {
+                        Text(
+                            text = formatEstimate(todo.estimateMinutes), // e.g., "15 min" / "1.5 h"
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
                         text = todo.project,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f) // let it ellipsize if long
                     )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = onPushToTomorrow) {
+                        if (todo.pushedToTomorrow)
+                            Text("do today")
+                        else
+                            Text("not today")
+                    }
                 }
             }
         }
@@ -271,13 +331,14 @@ private fun homeVmFactory(repo: TodoRepository): ViewModelProvider.Factory =
             return HomeViewModel(repo) as T
         }
     }
-
+/*
 //@OptIn(ExperimentalMaterialApi::class)
 @Composable
 private fun DismissibleTodoRow(
     todo: Todo,
     onToggle: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onPushToTomorrow: () -> Unit
 ) {
     val dismissState = rememberSwipeToDismissBoxState (
         confirmValueChange = {
@@ -323,3 +384,4 @@ private fun DismissibleTodoRow(
         TodoRow(todo = todo, onToggle = onToggle, onRemove = onRemove)
     }
 }
+*/

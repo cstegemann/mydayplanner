@@ -13,5 +13,6 @@ data class Todo(
     val completedAt: Long? = null,
     val important: Boolean = false,
     val estimateMinutes: Int = 15,
-    val project: String = "Other"
+    val project: String = "Other",
+    val pushedToTomorrow: Boolean = false
 )

@@ -143,4 +143,17 @@ class PlainJsonTodoRepository(
             saveToday()
         }
     }
+
+    override suspend fun togglePushToTomorrow(id: String) = withContext(io) {
+        withTodayLoaded {
+            val updated = _today.value.map { t ->
+                if (t.id == id) {
+                    val pushed = !t.pushedToTomorrow
+                    t.copy(pushedToTomorrow = pushed)
+                } else t
+            }
+            _today.value = updated
+            saveToday()
+        }
+    }
 }

@@ -31,7 +31,14 @@ class HomeViewModel(
         repo.todayTodos
             .map { todos ->
                 val sorted = todos.sortedWith(
-                    compareBy<Todo> { it.done }
+                    compareBy<Todo> {it.pushedToTomorrow}
+                        .thenBy { it.done }
+                        .thenByDescending {
+                            if (it.project == "META") 0 else 1
+                        }
+                        .thenByDescending {
+                            if (it.project == "Other") 0 else 1
+                        }
                         .thenByDescending { it.important }
                         .thenBy { it.createdAt }
                 )
@@ -69,4 +76,5 @@ class HomeViewModel(
 
     fun toggle(id: String) = viewModelScope.launch { repo.toggle(id) }
     fun remove(id: String) = viewModelScope.launch { repo.remove(id) }
+    fun togglePushToTomorrow(id: String) = viewModelScope.launch { repo.togglePushToTomorrow(id) }
 }
