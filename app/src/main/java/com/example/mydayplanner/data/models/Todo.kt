@@ -1,6 +1,7 @@
 package com.example.mydayplanner.data.models
 
 
+import com.example.mydayplanner.config.Project
 import java.util.UUID
 
 @kotlinx.serialization.Serializable
@@ -13,6 +14,6 @@ data class Todo(
     val completedAt: Long? = null,
     val important: Boolean = false,
     val estimateMinutes: Int = 15,
-    val project: String = "Other",
+    val project: Project = Project.Other,
     val pushedToTomorrow: Boolean = false
 )

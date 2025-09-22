@@ -18,28 +18,21 @@ import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.di.AppGraph
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.ui.formatEstimate
+import com.example.mydayplanner.ui.formatMinutesHM
 
 private val TimeEstimates = listOf(15, 30, 45, 60, 90, 120, 180)
-private fun formatEstimate(mins: Int) = when (mins) {
-    60 -> "1 h"
-    90 -> "1.5 h"
-    120 -> "2 h"
-    180 -> "3 h"
-    else -> "$mins min"
-}
-
-private val CurrentProjects = listOf("Other", "TIME", "GW")
-
-
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel(factory = homeVmFactory(AppGraph.todoRepo))
 ) {
@@ -51,7 +44,7 @@ fun HomeScreen(
 
     Scaffold(
         //topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
-        topBar = { RemainingHoursTopBar(ui.todos) }
+        topBar = { RemainingHoursTopBar(ui.todos, onOpenHistory) }
     ) { padding ->
         Column(
             modifier = modifier
@@ -127,6 +120,7 @@ fun HomeScreen(
 
                 // --- Project ---
                 var projExpanded by remember { mutableStateOf(false) }
+                val options = Project.pickerList
                 ExposedDropdownMenuBox(
                     expanded = projExpanded,
                     onExpandedChange = { projExpanded = !projExpanded },
@@ -134,7 +128,7 @@ fun HomeScreen(
                 ) {
                     OutlinedTextField(
                         readOnly = true,
-                        value = project,
+                        value = project.displayName,
                         onValueChange = {},
                         label = { Text("Project") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projExpanded) },
@@ -146,9 +140,9 @@ fun HomeScreen(
                         expanded = projExpanded,
                         onDismissRequest = { projExpanded = false }
                     ) {
-                        CurrentProjects.forEach { p ->
+                        options.forEach { p ->
                             DropdownMenuItem(
-                                text = { Text(p) },
+                                text = { Text(p.displayName) },
                                 onClick = {
                                     projExpanded = false
                                     project = p
@@ -181,20 +175,16 @@ fun HomeScreen(
     }
 }
 
-private fun formatMinutesHM(totalMinutes: Int): String {
-    val h = totalMinutes / 60
-    val m = totalMinutes % 60
-    return "$h:${m.toString().padStart(2, '0')}"
-}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RemainingHoursTopBar(todos: List<Todo>) {
+fun RemainingHoursTopBar(todos: List<Todo>, onOpenHistory: () -> Unit) {
     // Recompute whenever `todos` changes
     val workedMinutes by remember(todos) {
         derivedStateOf {
             todos.asSequence()
-                .filter { it.done && it.project != "META" }
+                .filter { it.done && it.project != Project.META }
                 .sumOf { it.estimateMinutes }
         }
     }
@@ -207,7 +197,7 @@ fun RemainingHoursTopBar(todos: List<Todo>) {
     val remainingMinutes by remember(todos) {
         derivedStateOf {
             todos.asSequence()
-                .filter { !it.done && !it.pushedToTomorrow && it.project !in listOf("META", "Other") }
+                .filter { !it.done && !it.pushedToTomorrow && it.project in Project.timedList }
                 .sumOf { it.estimateMinutes }
         }
     }
@@ -220,6 +210,11 @@ fun RemainingHoursTopBar(todos: List<Todo>) {
     CenterAlignedTopAppBar(
         title = {
             Text("$doneText • $remainingText")
+        },
+        navigationIcon = {
+            IconButton(onClick = onOpenHistory) {
+                Icon(Icons.Filled.Menu, contentDescription = "History")
+            }
         }
     )
 }
@@ -289,7 +284,7 @@ private fun TodoRow(todo: Todo, onToggle: () -> Unit,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // keep these compact & subtle
-                    if (todo.project != "META") {
+                    if (todo.project != Project.META) {
                         Text(
                             text = formatEstimate(todo.estimateMinutes), // e.g., "15 min" / "1.5 h"
                             style = MaterialTheme.typography.bodySmall,
@@ -302,7 +297,7 @@ private fun TodoRow(todo: Todo, onToggle: () -> Unit,
                         )
                     }
                     Text(
-                        text = todo.project,
+                        text = todo.project.displayName,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f) // let it ellipsize if long

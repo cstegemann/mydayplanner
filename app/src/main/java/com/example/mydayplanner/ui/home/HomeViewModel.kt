@@ -2,6 +2,7 @@ package com.example.mydayplanner.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.data.PlainJsonTodoRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +17,7 @@ data class HomeUiState(
     val input: String = "",
     val inputImportant: Boolean = false,
     val inputEstimateMinutes: Int = 15,
-    val inputProject: String = "Other"
+    val inputProject: Project = Project.Other
 )
 
 class HomeViewModel(
@@ -34,10 +35,10 @@ class HomeViewModel(
                     compareBy<Todo> {it.pushedToTomorrow}
                         .thenBy { it.done }
                         .thenByDescending {
-                            if (it.project == "META") 0 else 1
+                            if (it.project == Project.META) 0 else 1
                         }
                         .thenByDescending {
-                            if (it.project == "Other") 0 else 1
+                            if (it.project == Project.Other) 0 else 1
                         }
                         .thenByDescending { it.important }
                         .thenBy { it.createdAt }
@@ -52,11 +53,11 @@ class HomeViewModel(
     private var _input: String = ""
     private var _inputImportant: Boolean = false
     private var _inputEstimate = 15
-    private var _inputProject = "Other"
+    private var _inputProject = Project.Other
     val input get() = _input
 
     fun onSetEstimate(minutes: Int) { _inputEstimate = minutes }
-    fun onSetProject(project: String) { _inputProject = project }
+    fun onSetProject(project: Project) { _inputProject = project }
 
     fun add() = viewModelScope.launch {
         val text = _input.trim()

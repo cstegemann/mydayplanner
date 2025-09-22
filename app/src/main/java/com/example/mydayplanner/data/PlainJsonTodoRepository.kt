@@ -1,6 +1,7 @@
 package com.example.mydayplanner.data
 
 import android.content.Context
+import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -69,12 +70,12 @@ class PlainJsonTodoRepository(
             } else emptyList()
 
             carry.toMutableList().also {
-                it.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project="META"))
-                it.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project="META"))
-                it.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project="META"))
-                it.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project="META"))
-                it.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project="META"))
-                it.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project="META"))
+                it.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project= Project.META))
+                it.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project=Project.META))
+                it.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project=Project.META))
+                it.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project=Project.META))
+                it.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project=Project.META))
+                it.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project=Project.META))
                 // Persist a new (possibly empty) today file so we don't re-import later
                 val f = fileFor(today)
                 val tmp = File.createTempFile("today", ".tmp", dir)
@@ -106,7 +107,7 @@ class PlainJsonTodoRepository(
         text: String,
         important: Boolean,
         estimateMinutes: Int,
-        project: String
+        project: Project
     ) = withContext(io) {
         if (text.isBlank()) return@withContext
         withTodayLoaded {
@@ -155,5 +156,28 @@ class PlainJsonTodoRepository(
             _today.value = updated
             saveToday()
         }
+    }
+
+    // data/PlainJsonTodoRepository.kt  (add these impls)
+    override suspend fun getRecentDays(limit: Int): List<String> = withContext(io) {
+        // list files like 2025-09-18.json → sort desc → take up to limit
+        dir.listFiles()
+            ?.asSequence()
+            ?.mapNotNull { f ->
+                val name = f.name
+                if (name.endsWith(".json")) name.removeSuffix(".json") else null
+            }
+            ?.filter { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
+            ?.sortedDescending()
+            ?.take(limit)
+            ?.toList()
+            ?: emptyList()
+    }
+
+    override suspend fun getDay(dayKey: String): List<Todo> = withContext(io) {
+        val f = fileFor(dayKey)
+        if (!f.exists()) return@withContext emptyList()
+        runCatching { json.decodeFromString<List<Todo>>(f.readText()) }
+            .getOrElse { emptyList() }
     }
 }
