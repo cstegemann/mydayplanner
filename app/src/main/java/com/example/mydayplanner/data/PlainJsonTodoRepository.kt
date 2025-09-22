@@ -2,6 +2,7 @@ package com.example.mydayplanner.data
 
 import android.content.Context
 import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -65,7 +66,7 @@ class PlainJsonTodoRepository(
                     .getOrElse { emptyList() }
                     .asSequence()
                     .filter { !it.done }
-                    .map { it.copy(done = false, completedAt = null) }
+                    .map { it.copy(done = false, completedAt = null, pushedToTomorrow = false) }
                     .toList()
             } else emptyList()
 
@@ -84,6 +85,8 @@ class PlainJsonTodoRepository(
                 tmp.renameTo(f)
             }
         }
+        // load or create today's tracking
+        loadTracking(today)
 
         _today.value = todayList
         loadedDayKey = today
@@ -180,4 +183,75 @@ class PlainJsonTodoRepository(
         runCatching { json.decodeFromString<List<Todo>>(f.readText()) }
             .getOrElse { emptyList() }
     }
+
+    /*
+    * TRACKING STUFF
+    * */
+
+    private fun trackingFileFor(day: String): File = File(dir, "$day.track.json")
+
+    private val _tracking = MutableStateFlow(DayTracking())
+    override val tracking = _tracking.asStateFlow()
+
+    private suspend fun loadTracking(day: String = todayKey()) = withContext(io) {
+        val tf = trackingFileFor(day)
+        val state = if (tf.exists()) {
+            runCatching { json.decodeFromString<DayTracking>(tf.readText()) }
+                .getOrElse { DayTracking() }
+        } else DayTracking()
+        _tracking.value = state
+    }
+
+    private suspend fun saveTracking(day: String = todayKey()) = withContext(io) {
+        val tf = trackingFileFor(day)
+        val tmp = File.createTempFile("track", ".tmp", dir)
+        tmp.writeText(json.encodeToString(DayTracking.serializer(), _tracking.value))
+        tf.delete()
+        tmp.renameTo(tf)
+    }
+
+    override suspend fun setCurrentProject(project: Project?){
+        withContext(io) {
+            ensureLoadedForToday()
+            val now = System.currentTimeMillis()
+            val cur = _tracking.value
+
+            val totals = cur.totals.toMutableMap()
+
+            // Close previous segment if any
+            if (cur.current != null && cur.startedAt != null) {
+                val elapsed = (now - cur.startedAt).coerceAtLeast(0L)
+                totals[cur.current] = (totals[cur.current] ?: 0L) + elapsed
+            }
+
+            // Start new or stop
+            _tracking.value = if (project == null) {
+                cur.copy(current = null, startedAt = null, totals = totals)
+            } else {
+                DayTracking(current = project, startedAt = now, totals = totals)
+            }
+
+            saveTracking()
+        }
+    }
+
+    /** Read totals including the live-running segment for display */
+    override fun currentTotalsWithLive(nowMillis: Long): Map<Project, Long> {
+        val t = _tracking.value
+        val base = t.totals.toMutableMap()
+        if (t.current != null && t.startedAt != null) {
+            val live = (nowMillis - t.startedAt).coerceAtLeast(0L)
+            base[t.current] = (base[t.current] ?: 0L) + live
+        }
+        return base
+    }
+
+    // Implement the interface method
+    override suspend fun getDayTracking(dayKey: String): DayTracking = withContext(io) {
+        val tf = trackingFileFor(dayKey)
+        if (!tf.exists()) return@withContext DayTracking()
+        runCatching { json.decodeFromString<DayTracking>(tf.readText()) }
+            .getOrElse { DayTracking() }
+    }
+
 }

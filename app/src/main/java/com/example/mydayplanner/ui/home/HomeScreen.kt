@@ -24,6 +24,7 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.ui.formatEstimate
 import com.example.mydayplanner.ui.formatMinutesHM
 
@@ -44,7 +45,7 @@ fun HomeScreen(
 
     Scaffold(
         //topBar = { CenterAlignedTopAppBar(title = { Text("Today") }) }
-        topBar = { RemainingHoursTopBar(ui.todos, onOpenHistory) }
+        topBar = { MultiUseTopBar(ui.todos, onOpenHistory, ui.tracking, viewModel) }
     ) { padding ->
         Column(
             modifier = modifier
@@ -54,6 +55,16 @@ fun HomeScreen(
         ) {
             // Input row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { viewModel.add(); input = "" }) { Text("Add") }
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = input,
+                    onValueChange = { input = it; viewModel.onInputChange(it) },
+                    placeholder = { Text("Add a task…") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { viewModel.add(); input = "" })
+                )
                 IconToggleButton(
                     checked = inputImportant,
                     onCheckedChange = {
@@ -70,16 +81,6 @@ fun HomeScreen(
                             tint= Color.LightGray
                         )
                 }
-                OutlinedTextField(
-                    modifier = Modifier.weight(1f),
-                    value = input,
-                    onValueChange = { input = it; viewModel.onInputChange(it) },
-                    placeholder = { Text("Add a task…") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { viewModel.add(); input = "" })
-                )
-                Button(onClick = { viewModel.add(); input = "" }) { Text("Add") }
             }
             Spacer(Modifier.height(8.dp))
             // Row: two exposed dropdowns (Estimate, Project)
@@ -179,7 +180,7 @@ fun HomeScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RemainingHoursTopBar(todos: List<Todo>, onOpenHistory: () -> Unit) {
+fun MultiUseTopBar(todos: List<Todo>, onOpenHistory: () -> Unit, tracking: DayTracking, viewModel: HomeViewModel) {
     // Recompute whenever `todos` changes
     val workedMinutes by remember(todos) {
         derivedStateOf {
@@ -190,9 +191,9 @@ fun RemainingHoursTopBar(todos: List<Todo>, onOpenHistory: () -> Unit) {
     }
 
     val doneText = if (workedMinutes > 0)
-        "${formatMinutesHM(workedMinutes)} h done"
+        formatMinutesHM(workedMinutes)
     else
-        "Let's start!"
+        "Let's go!"
 
     val remainingMinutes by remember(todos) {
         derivedStateOf {
@@ -203,17 +204,56 @@ fun RemainingHoursTopBar(todos: List<Todo>, onOpenHistory: () -> Unit) {
     }
 
     val remainingText = if (remainingMinutes > 0)
-        "${formatMinutesHM(remainingMinutes)} h left"
+        formatMinutesHM(remainingMinutes)
     else
-        "All done 🎉"
+        "0:00 🎉"
 
     CenterAlignedTopAppBar(
         title = {
-            Text("$doneText • $remainingText")
+            Text("$doneText / $remainingText")
         },
         navigationIcon = {
             IconButton(onClick = onOpenHistory) {
                 Icon(Icons.Filled.Menu, contentDescription = "History")
+            }
+        },
+        actions = {
+            // Current Project dropdown
+            var expanded by remember { mutableStateOf(false) }
+            val current = tracking.current
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded }
+            ) {
+                val label = current?.displayName ?: "----"
+                OutlinedTextField(
+                    readOnly = true,
+                    value = label,
+                    onValueChange = {},
+                    label = { Text("Current") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        .widthIn(min = 60.dp, max=120.dp) // keeps it compact in TopBar
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    // None
+                    DropdownMenuItem(
+                        text = { Text("----") },
+                        onClick = { expanded = false; viewModel.onSelectCurrentProject(null) }
+                    )
+                    HorizontalDivider()
+                    // Only selectable projects (hides internal)
+                    Project.pickerList.forEach { p ->
+                        DropdownMenuItem(
+                            text = { Text(p.displayName) },
+                            onClick = { expanded = false; viewModel.onSelectCurrentProject(p) }
+                        )
+                    }
+                }
             }
         }
     )

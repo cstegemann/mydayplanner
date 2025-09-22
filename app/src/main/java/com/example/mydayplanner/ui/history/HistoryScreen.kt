@@ -3,6 +3,7 @@ package com.example.mydayplanner.ui.history
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.di.AppGraph
+import com.example.mydayplanner.ui.formatDuration
 import com.example.mydayplanner.ui.formatEstimate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,7 +67,27 @@ private fun DayBlock(day: DayHistory) {
             style = MaterialTheme.typography.titleMedium
         )
         Spacer(Modifier.height(6.dp))
-
+        val nonZeroTotals = day.totals.filterValues { it > 0L }
+        if (nonZeroTotals.isNotEmpty()) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                items(nonZeroTotals.entries.toList()) { (project, millis) ->
+                    AssistChip(
+                        onClick = { /* no-op */ },
+                        label = { Text("${project.displayName}: ${formatDuration(millis)}") },
+                        colors = AssistChipDefaults.assistChipColors()
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = "No tracked time",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (day.groups.isEmpty()) {
             Text(
                 text = "No completed tasks",
@@ -86,7 +108,11 @@ private fun DayBlock(day: DayHistory) {
                 // Items
                 group.items.forEach { t ->
                     val est = formatEstimate(t.estimateMinutes)
-                    Text("• ${t.text}  —  $est", style = MaterialTheme.typography.bodyMedium)
+                    if (t.project.selectableInPicker) {
+                        Text("• ${t.text}  —  $est", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        Text("• ${t.text}", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }

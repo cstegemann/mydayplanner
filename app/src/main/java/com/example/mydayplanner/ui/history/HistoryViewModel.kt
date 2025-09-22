@@ -6,6 +6,7 @@ import com.example.mydayplanner.config.Project
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import com.example.mydayplanner.data.TodoRepository
+import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -23,6 +24,7 @@ data class ProjectGroup(
 data class DayHistory(
     val dayKey: String,               // "2025-09-18"
     val weekdayShort: String,         // "Thu", "Mo", etc.
+    val totals: Map<Project, Long>,
     val groups: List<ProjectGroup>
 )
 
@@ -55,10 +57,12 @@ class HistoryViewModel(private val repo: TodoRepository) : ViewModel() {
                         )
                         ProjectGroup(project = project, items = sortedItems)
                     }
+                val tracking: DayTracking = repo.getDayTracking(k)
+                val totals = tracking.totals // Map<Project, Long>
                 //if (all.isNotEmpty()) {
                 val date = LocalDate.parse(k, fmt)
                 val wd = date.dayOfWeek.getDisplayName(TextStyle.SHORT, locale) // e.g., "Thu"
-                out += DayHistory(dayKey = k, weekdayShort = wd, groups = groups)
+                out += DayHistory(dayKey = k, weekdayShort = wd, groups = groups, totals = totals)
                 //}
             }
             _days.value = out

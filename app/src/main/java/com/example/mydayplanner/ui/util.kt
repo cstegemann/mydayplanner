@@ -14,3 +14,13 @@ fun formatEstimate(mins: Int) = when (mins) {
     else -> "$mins min"
 }
 
+fun formatDuration(millis: Long): String {
+    val minutes = millis / 60_000
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h > 0 && m > 0 -> "${h}h ${m}m"
+        h > 0 -> "${h}h"
+        else -> "${m}m"
+    }
+}

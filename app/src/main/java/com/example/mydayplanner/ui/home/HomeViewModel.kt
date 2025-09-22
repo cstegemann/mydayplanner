@@ -6,18 +6,21 @@ import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.data.PlainJsonTodoRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.example.mydayplanner.data.TodoRepository
+import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
+import kotlinx.coroutines.flow.combine
 
 data class HomeUiState(
     val todos: List<Todo> = emptyList(),
     val input: String = "",
     val inputImportant: Boolean = false,
     val inputEstimateMinutes: Int = 15,
-    val inputProject: Project = Project.Other
+    val inputProject: Project = Project.Other,
+    val tracking: DayTracking = DayTracking(),
+    val totals: Map<Project, Long> = emptyMap()
 )
 
 class HomeViewModel(
@@ -29,8 +32,7 @@ class HomeViewModel(
         }
     }
     val uiState: StateFlow<HomeUiState> =
-        repo.todayTodos
-            .map { todos ->
+        combine(repo.todayTodos, repo.tracking) { todos, tracking ->
                 val sorted = todos.sortedWith(
                     compareBy<Todo> {it.pushedToTomorrow}
                         .thenBy { it.done }
@@ -43,8 +45,11 @@ class HomeViewModel(
                         .thenByDescending { it.important }
                         .thenBy { it.createdAt }
                 )
-                HomeUiState(todos = sorted) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+                HomeUiState(todos = sorted,
+                    tracking = tracking,
+                    totals = repo.currentTotalsWithLive()
+                )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun onInputChange(value: String) {
         _input = value
@@ -78,4 +83,7 @@ class HomeViewModel(
     fun toggle(id: String) = viewModelScope.launch { repo.toggle(id) }
     fun remove(id: String) = viewModelScope.launch { repo.remove(id) }
     fun togglePushToTomorrow(id: String) = viewModelScope.launch { repo.togglePushToTomorrow(id) }
+    fun onSelectCurrentProject(p: Project?) = viewModelScope.launch {
+        repo.setCurrentProject(p)
+    }
 }
