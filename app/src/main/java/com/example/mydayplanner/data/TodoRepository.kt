@@ -1,6 +1,7 @@
 package com.example.mydayplanner.data
 
 import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.data.models.DayTracking
 import kotlinx.coroutines.flow.Flow
 import com.example.mydayplanner.data.models.Todo
@@ -11,8 +12,10 @@ interface TodoRepository {
         text: String,
         important: Boolean = false,
         estimateMinutes: Int = 15,
-        project: Project = Project.Other
+        project: Project = Project.Other,
+        difficulty: TaskDifficulty? = null
     )
+    suspend fun update(todo: Todo)
     suspend fun toggle(id: String)
     suspend fun remove(id: String)
     suspend fun togglePushToTomorrow(id: String)
