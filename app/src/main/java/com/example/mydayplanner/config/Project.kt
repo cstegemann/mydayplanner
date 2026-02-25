@@ -13,14 +13,22 @@ enum class Project(
     val displayName: String,
     val sortOrder: Int,
     val selectableInPicker: Boolean = true,  // ← hide from “new task” dropdown when false
+    val selectableAsCurrent: Boolean = true,
     val countInTimer: Boolean = true,
     val aliases: Set<String> = emptySet()    // ← decode legacy labels/typos
 ) {
 
     TIME("TIME", sortOrder = 1),
     GW("GW", sortOrder = 2),
+    FREE_DAY(
+        "Free day",
+        selectableInPicker = false,
+        countInTimer = false,
+        sortOrder = 97,
+        aliases = setOf("FREE_DAY", "free_day")
+    ),
     Other("Other", countInTimer = false, sortOrder = 98),
-    META("META", selectableInPicker = false, countInTimer = false, sortOrder = 99);
+    META("META", selectableInPicker = false, selectableAsCurrent = false, countInTimer = false, sortOrder = 99);
 
     companion object {
         val all = entries
@@ -28,6 +36,9 @@ enum class Project(
 
         /** What the add-task dropdown should show */
         val pickerList: List<Project> = all.filter { it.selectableInPicker }
+
+        /** What the top "Current" selector should show */
+        val currentList: List<Project> = all.filter { it.selectableAsCurrent }
 
         /** Map a string (case-insensitive) to an enum; unknown → Other */
         fun fromLabel(label: String?): Project {
