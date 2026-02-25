@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -111,7 +112,7 @@ fun HomeScreen(
                                 important = false,
                                 estimate = 15,
                                 project = Project.Other,
-                                difficulty = null
+                                difficulty = TaskDifficulty.TediousNormal
                             )
                         }
                     }) { Text("Add") }
@@ -130,7 +131,7 @@ fun HomeScreen(
                                     important = false,
                                     estimate = 15,
                                     project = Project.Other,
-                                    difficulty = null
+                                    difficulty = TaskDifficulty.TediousNormal
                                 )
                             }
                         })
@@ -315,11 +316,11 @@ private fun TodoRow(
         tonalElevation = if (todo.important) 2.dp else 1.dp,
         shape = MaterialTheme.shapes.medium
     ) {
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             Box(
                 modifier = Modifier
                     .width(6.dp)
-                    .height(84.dp)
+                    .fillMaxHeight()
                     .background(difficultyColor ?: Color.Transparent)
             )
             Row(
@@ -396,7 +397,7 @@ private fun TodoEditorDialog(
     var important by remember(draft) { mutableStateOf(draft.important) }
     var estimate by remember(draft) { mutableIntStateOf(draft.estimate) }
     var project by remember(draft) { mutableStateOf(draft.project) }
-    var selectedDifficulty by remember(draft) { mutableStateOf(draft.difficulty) }
+    var selectedDifficulty by remember(draft) { mutableStateOf(draft.difficulty ?: TaskDifficulty.TediousNormal) }
 
     fun save() = onSave(
         draft.copy(
@@ -428,7 +429,7 @@ private fun TodoEditorDialog(
                     label = { Text("Task") },
                     singleLine = true
                 )
-                DifficultyQuadrants(selectedDifficulty) { tapped ->
+                DifficultyQuestions(selectedDifficulty) { tapped ->
                     if (selectedDifficulty == tapped) {
                         if (text.isNotBlank()) save()
                     } else {
@@ -502,63 +503,80 @@ private fun TodoEditorDialog(
 }
 
 @Composable
-private fun DifficultyQuadrants(
+private fun DifficultyQuestions(
     selected: TaskDifficulty?,
     onSelected: (TaskDifficulty) -> Unit
 ) {
-    val tiles = TaskDifficultyDef.byDifficulty
-
     Text("Difficulty")
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("${TaskDifficultyDef.topAxisLabel} ↑", style = MaterialTheme.typography.bodySmall)
+        val effective = selected ?: TaskDifficulty.TediousNormal
+        val isFun = effective == TaskDifficulty.FunNormal || effective == TaskDifficulty.FunDraining
+        val isDraining = effective == TaskDifficulty.FunDraining || effective == TaskDifficulty.TediousDraining
+
+        Text(TaskDifficultyDef.funQuestionLabel, style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             DifficultyTile(
-                definition = tiles.getValue(TaskDifficulty.TediousNormal),
-                selected = selected == TaskDifficulty.TediousNormal,
-                onSelected = onSelected
+                title = TaskDifficultyDef.tediousLabel,
+                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
+                selected = !isFun,
+                onSelected = {
+                    val next = if (isDraining) TaskDifficulty.TediousDraining else TaskDifficulty.TediousNormal
+                    onSelected(next)
+                }
             )
             DifficultyTile(
-                definition = tiles.getValue(TaskDifficulty.TediousDraining),
-                selected = selected == TaskDifficulty.TediousDraining,
-                onSelected = onSelected
+                title = TaskDifficultyDef.funLabel,
+                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.FunNormal).color,
+                selected = isFun,
+                onSelected = {
+                    val next = if (isDraining) TaskDifficulty.FunDraining else TaskDifficulty.FunNormal
+                    onSelected(next)
+                }
             )
         }
+
+        Text(TaskDifficultyDef.drainingQuestionLabel, style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             DifficultyTile(
-                definition = tiles.getValue(TaskDifficulty.FunNormal),
-                selected = selected == TaskDifficulty.FunNormal,
-                onSelected = onSelected
+                title = TaskDifficultyDef.normalLabel,
+                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
+                selected = !isDraining,
+                onSelected = {
+                    val next = if (isFun) TaskDifficulty.FunNormal else TaskDifficulty.TediousNormal
+                    onSelected(next)
+                }
             )
             DifficultyTile(
-                definition = tiles.getValue(TaskDifficulty.FunDraining),
-                selected = selected == TaskDifficulty.FunDraining,
-                onSelected = onSelected
+                title = TaskDifficultyDef.drainingLabel,
+                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousDraining).color,
+                selected = isDraining,
+                onSelected = {
+                    val next = if (isFun) TaskDifficulty.FunDraining else TaskDifficulty.TediousDraining
+                    onSelected(next)
+                }
             )
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(TaskDifficultyDef.leftAxisLabel, style = MaterialTheme.typography.bodySmall)
-            Text(TaskDifficultyDef.rightAxisLabel, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
 
 @Composable
 private fun DifficultyTile(
-    definition: com.example.mydayplanner.config.DifficultyTileDef,
+    title: String,
+    color: Color,
     selected: Boolean,
-    onSelected: (TaskDifficulty) -> Unit
+    onSelected: () -> Unit
 ) {
     Surface(
         modifier = Modifier
             .weight(1f)
             .height(58.dp)
-            .clickable { onSelected(definition.difficulty) },
-        color = definition.color.copy(alpha = if (selected) 1f else 0.7f),
+            .clickable { onSelected() },
+        color = color.copy(alpha = if (selected) 1f else 0.7f),
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface) else null,
         shape = MaterialTheme.shapes.small
     ) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(definition.title, style = MaterialTheme.typography.bodySmall)
+            Text(title, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

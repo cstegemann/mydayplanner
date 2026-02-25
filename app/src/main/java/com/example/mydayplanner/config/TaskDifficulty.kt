@@ -18,25 +18,27 @@ data class DifficultyTileDef(
 )
 
 object TaskDifficultyDef {
-    const val topAxisLabel = "Tedious"
-    const val bottomAxisLabel = "Fun"
-    const val leftAxisLabel = "Normal"
-    const val rightAxisLabel = "Draining"
+    const val funQuestionLabel = "Is it fun?"
+    const val drainingQuestionLabel = "Is it draining?"
+
+    const val funLabel = "Fun"
+    const val tediousLabel = "Tedious"
+    const val normalLabel = "Normal"
+    const val drainingLabel = "Draining"
 
     val doneColor: Color = Color(0xFF7E57C2)
 
     private val lushGreen = Color(0xFF43A047)
     private val greenToOrange1 = Color(0xFF66BB6A)
-    private val greenToOrange2 = Color(0xFFFFB74D)
+    private val greenToOrange2 = Color(0xFFFFE2A8)
     private val orange = Color(0xFFFB8C00)
 
     val tiles: List<DifficultyTileDef> = listOf(
-        DifficultyTileDef(TaskDifficulty.FunNormal, "$bottomAxisLabel + $leftAxisLabel", lushGreen),
-        DifficultyTileDef(TaskDifficulty.FunDraining, "$bottomAxisLabel + $rightAxisLabel", greenToOrange1),
-        DifficultyTileDef(TaskDifficulty.TediousNormal, "$topAxisLabel + $leftAxisLabel", greenToOrange2),
-        DifficultyTileDef(TaskDifficulty.TediousDraining, "$topAxisLabel + $rightAxisLabel", orange)
+        DifficultyTileDef(TaskDifficulty.FunNormal, "$funLabel + $normalLabel", lushGreen),
+        DifficultyTileDef(TaskDifficulty.FunDraining, "$funLabel + $drainingLabel", greenToOrange1),
+        DifficultyTileDef(TaskDifficulty.TediousNormal, "$tediousLabel + $normalLabel", greenToOrange2),
+        DifficultyTileDef(TaskDifficulty.TediousDraining, "$tediousLabel + $drainingLabel", orange)
     )
 
     val byDifficulty: Map<TaskDifficulty, DifficultyTileDef> = tiles.associateBy { it.difficulty }
 }
-
