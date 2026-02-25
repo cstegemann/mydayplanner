@@ -516,6 +516,7 @@ private fun DifficultyQuestions(
         Text(TaskDifficultyDef.funQuestionLabel, style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             DifficultyTile(
+                modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.tediousLabel,
                 color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
                 selected = !isFun,
@@ -525,6 +526,7 @@ private fun DifficultyQuestions(
                 }
             )
             DifficultyTile(
+                modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.funLabel,
                 color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.FunNormal).color,
                 selected = isFun,
@@ -538,6 +540,7 @@ private fun DifficultyQuestions(
         Text(TaskDifficultyDef.drainingQuestionLabel, style = MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
             DifficultyTile(
+                modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.normalLabel,
                 color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
                 selected = !isDraining,
@@ -547,6 +550,7 @@ private fun DifficultyQuestions(
                 }
             )
             DifficultyTile(
+                modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.drainingLabel,
                 color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousDraining).color,
                 selected = isDraining,
@@ -561,13 +565,14 @@ private fun DifficultyQuestions(
 
 @Composable
 private fun DifficultyTile(
+    modifier: Modifier = Modifier,
     title: String,
     color: Color,
     selected: Boolean,
     onSelected: () -> Unit
 ) {
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .height(58.dp)
             .clickable { onSelected() },
         color = color.copy(alpha = if (selected) 1f else 0.7f),
