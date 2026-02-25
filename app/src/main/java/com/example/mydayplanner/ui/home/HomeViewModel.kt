@@ -81,13 +81,15 @@ class HomeViewModel(
         difficulty: TaskDifficulty?
     ) = viewModelScope.launch {
         if (text.isNotBlank()) {
-            repo.add(
-                text = text.trim(),
-                important = important,
-                estimateMinutes = estimateMinutes,
-                project = project,
-                difficulty = difficulty
-            )
+            splitTodoParts(text.trim(), estimateMinutes).forEach { part ->
+                repo.add(
+                    text = part.text,
+                    important = important,
+                    estimateMinutes = part.estimateMinutes,
+                    project = project,
+                    difficulty = difficulty
+                )
+            }
             _input = ""
         }
     }
@@ -99,5 +101,27 @@ class HomeViewModel(
     fun togglePushToTomorrow(id: String) = viewModelScope.launch { repo.togglePushToTomorrow(id) }
     fun onSelectCurrentProject(p: Project?) = viewModelScope.launch {
         repo.setCurrentProject(p)
+    }
+}
+
+internal data class TodoPart(
+    val text: String,
+    val estimateMinutes: Int
+)
+
+internal fun splitTodoParts(text: String, estimateMinutes: Int): List<TodoPart> {
+    if (estimateMinutes <= 60) {
+        return listOf(TodoPart(text = text, estimateMinutes = estimateMinutes))
+    }
+
+    val partCount = (estimateMinutes + 59) / 60
+    val romanNumerals = listOf("I", "II", "III", "IV", "V")
+    var remaining = estimateMinutes
+
+    return List(partCount) { index ->
+        val minutes = minOf(60, remaining)
+        remaining -= minutes
+        val suffix = romanNumerals.getOrElse(index) { "${index + 1}" }
+        TodoPart(text = "$text $suffix", estimateMinutes = minutes)
     }
 }
