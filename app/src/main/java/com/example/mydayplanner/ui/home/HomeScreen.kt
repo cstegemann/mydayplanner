@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -92,13 +93,30 @@ fun HomeScreen(
     var input by remember { mutableStateOf(viewModel.input) }
     var editorDraft by remember { mutableStateOf<TodoEditorDraft?>(null) }
 
-    Scaffold(topBar = { MultiUseTopBar(ui.todos, onOpenHistory, ui.tracking, viewModel) }) { padding ->
+    val freeDayMode = ui.tracking.isFreeDayMode()
+    val freeDayBackground = Color(0xFF6FAF46)
+
+    Scaffold(
+        containerColor = if (freeDayMode) freeDayBackground else MaterialTheme.colorScheme.background,
+        topBar = {
+            MultiUseTopBar(
+                todos = ui.todos,
+                onOpenHistory = onOpenHistory,
+                tracking = ui.tracking,
+                viewModel = viewModel,
+                freeDayMode = freeDayMode,
+                freeDayBackground = freeDayBackground
+            )
+        }
+    ) { padding ->
         Column(
             modifier = modifier
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            DifficultyMixBar(ui.todos)
+            if (!freeDayMode) {
+                DifficultyMixBar(ui.todos)
+            }
             RiskWarnings(todos = ui.todos, tracking = ui.tracking)
             Column(
                 modifier = Modifier
@@ -298,15 +316,18 @@ private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
     Spacer(Modifier.height(8.dp))
 }
 
-private fun DayTracking.isFreeDayMode(): Boolean {
-    val currentProject = current ?: return false
-    return currentProject.name.equals("FREE_DAY", ignoreCase = true) ||
-        currentProject.displayName.equals("Free day", ignoreCase = true)
-}
+private fun DayTracking.isFreeDayMode(): Boolean = current == Project.FREE_DAY
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MultiUseTopBar(todos: List<Todo>, onOpenHistory: () -> Unit, tracking: DayTracking, viewModel: HomeViewModel) {
+fun MultiUseTopBar(
+    todos: List<Todo>,
+    onOpenHistory: () -> Unit,
+    tracking: DayTracking,
+    viewModel: HomeViewModel,
+    freeDayMode: Boolean,
+    freeDayBackground: Color
+) {
     val workedMinutes by remember(todos) {
         derivedStateOf {
             todos.asSequence().filter { it.done && it.project != Project.META }.sumOf { it.estimateMinutes }
@@ -326,7 +347,16 @@ fun MultiUseTopBar(todos: List<Todo>, onOpenHistory: () -> Unit, tracking: DayTr
     val remainingText = if (remainingMinutes > 0) formatMinutesHM(remainingMinutes) else "0:00 🎉"
 
     CenterAlignedTopAppBar(
-        title = { Text("$doneText / $remainingText") },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = if (freeDayMode) freeDayBackground else MaterialTheme.colorScheme.surface
+        ),
+        title = {
+            if (freeDayMode) {
+                Text("Free day 🌿")
+            } else {
+                Text("$doneText / $remainingText")
+            }
+        },
         navigationIcon = {
             IconButton(onClick = onOpenHistory) {
                 Icon(Icons.Filled.Menu, contentDescription = "History")
@@ -350,7 +380,7 @@ fun MultiUseTopBar(todos: List<Todo>, onOpenHistory: () -> Unit, tracking: DayTr
                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     DropdownMenuItem(text = { Text("----") }, onClick = { expanded = false; viewModel.onSelectCurrentProject(null) })
                     HorizontalDivider()
-                    Project.pickerList.forEach { p ->
+                    Project.currentList.forEach { p ->
                         DropdownMenuItem(
                             text = { Text(p.displayName) },
                             onClick = { expanded = false; viewModel.onSelectCurrentProject(p) }
@@ -542,7 +572,7 @@ private fun TodoEditorDialog(
                             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = projExpanded, onDismissRequest = { projExpanded = false }) {
-                            Project.pickerList.forEach { p ->
+                            Project.currentList.forEach { p ->
                                 DropdownMenuItem(
                                     text = { Text(p.displayName) },
                                     onClick = { projExpanded = false; project = p }

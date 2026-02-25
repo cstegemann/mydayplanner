@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -210,7 +211,24 @@ class PlainJsonTodoRepository(
         val state = if (tf.exists()) {
             runCatching { json.decodeFromString<DayTracking>(tf.readText()) }
                 .getOrElse { DayTracking() }
-        } else DayTracking()
+        } else {
+            val dayDate = runCatching { LocalDate.parse(day) }.getOrNull()
+            if (dayDate != null && dayDate.dayOfWeek != DayOfWeek.MONDAY) {
+                val prev = trackingFileFor(dayDate.minusDays(1).toString())
+                val previousState = if (prev.exists()) {
+                    runCatching { json.decodeFromString<DayTracking>(prev.readText()) }
+                        .getOrElse { DayTracking() }
+                } else DayTracking()
+
+                if (previousState.current == Project.FREE_DAY) {
+                    DayTracking(current = Project.FREE_DAY, startedAt = null, totals = emptyMap())
+                } else {
+                    DayTracking()
+                }
+            } else {
+                DayTracking()
+            }
+        }
         _tracking.value = state
     }
 
@@ -240,7 +258,8 @@ class PlainJsonTodoRepository(
             _tracking.value = if (project == null) {
                 cur.copy(current = null, startedAt = null, totals = totals)
             } else {
-                DayTracking(current = project, startedAt = now, totals = totals)
+                val startsTimer = project.countInTimer
+                DayTracking(current = project, startedAt = if (startsTimer) now else null, totals = totals)
             }
 
             saveTracking()
