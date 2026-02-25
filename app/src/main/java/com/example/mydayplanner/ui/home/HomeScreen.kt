@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import java.time.LocalTime
 import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.config.TaskDifficultyDef
@@ -98,6 +99,7 @@ fun HomeScreen(
                 .fillMaxSize()
         ) {
             DifficultyMixBar(ui.todos)
+            RiskWarnings(todos = ui.todos, tracking = ui.tracking)
             Column(
                 modifier = Modifier
                     .padding(16.dp)
@@ -227,6 +229,7 @@ private fun DifficultyMixBar(todos: List<Todo>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(top = 8.dp)
             .height(12.dp)
             .clip(MaterialTheme.shapes.small)
     ) {
@@ -240,6 +243,65 @@ private fun DifficultyMixBar(todos: List<Todo>) {
         }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+@Composable
+private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
+    if (tracking.isFreeDayMode()) return
+
+    val dayPlanTodos = todos.filter { !it.pushedToTomorrow && it.project != Project.META }
+    if (dayPlanTodos.isEmpty()) return
+
+    val remainingTodos = dayPlanTodos.filter { !it.done }
+
+    val drainingTediousDayMinutes = dayPlanTodos
+        .filter { it.difficulty == TaskDifficulty.TediousDraining }
+        .sumOf { it.estimateMinutes }
+    val drainingTediousRemainingMinutes = remainingTodos
+        .filter { it.difficulty == TaskDifficulty.TediousDraining }
+        .sumOf { it.estimateMinutes }
+
+    val tediousDayMinutes = dayPlanTodos
+        .filter { it.difficulty == TaskDifficulty.TediousNormal || it.difficulty == TaskDifficulty.TediousDraining }
+        .sumOf { it.estimateMinutes }
+
+    val plannedWithoutOtherMinutes = dayPlanTodos
+        .filter { it.project != Project.Other }
+        .sumOf { it.estimateMinutes }
+    val plannedWithOtherMinutes = dayPlanTodos.sumOf { it.estimateMinutes }
+
+    val now = LocalTime.now()
+    val minutesUntilNoon = if (now.isBefore(LocalTime.NOON)) {
+        (LocalTime.NOON.toSecondOfDay() - now.toSecondOfDay()) / 60
+    } else {
+        0
+    }
+
+    val warnings = buildList {
+        if (drainingTediousDayMinutes > 120) add("Heavy drain load")
+        if (now.isBefore(LocalTime.NOON) && drainingTediousRemainingMinutes > minutesUntilNoon) add("Tough stuff before noon")
+        if (tediousDayMinutes == 0) add("Too comfort-heavy")
+        if (plannedWithoutOtherMinutes < 270) add("Plan too light")
+        if (plannedWithoutOtherMinutes > 360 || plannedWithOtherMinutes > 480) add("Plan too heavy")
+    }
+
+    if (warnings.isEmpty()) return
+
+    Text(
+        text = warnings.joinToString(separator = " | "),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+    )
+    Spacer(Modifier.height(8.dp))
+}
+
+private fun DayTracking.isFreeDayMode(): Boolean {
+    val currentProject = current ?: return false
+    return currentProject.name.equals("FREE_DAY", ignoreCase = true) ||
+        currentProject.displayName.equals("Free day", ignoreCase = true)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
