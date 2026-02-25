@@ -572,7 +572,7 @@ private fun TodoEditorDialog(
                             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = projExpanded, onDismissRequest = { projExpanded = false }) {
-                            Project.currentList.forEach { p ->
+                            Project.pickerList.forEach { p ->
                                 DropdownMenuItem(
                                     text = { Text(p.displayName) },
                                     onClick = { projExpanded = false; project = p }
