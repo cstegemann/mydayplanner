@@ -2,6 +2,7 @@ package com.example.mydayplanner.data
 
 import android.content.Context
 import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.CoroutineDispatcher
@@ -110,7 +111,8 @@ class PlainJsonTodoRepository(
         text: String,
         important: Boolean,
         estimateMinutes: Int,
-        project: Project
+        project: Project,
+        difficulty: TaskDifficulty?
     ) = withContext(io) {
         if (text.isBlank()) return@withContext
         withTodayLoaded {
@@ -121,9 +123,19 @@ class PlainJsonTodoRepository(
                 createdAt = System.currentTimeMillis(),
                 important = important,
                 estimateMinutes = estimateMinutes,
-                project = project
+                project = project,
+                difficulty = difficulty
             )
             _today.value = newList
+            saveToday()
+        }
+    }
+
+    override suspend fun update(todo: Todo) = withContext(io) {
+        withTodayLoaded {
+            _today.value = _today.value.map { existing ->
+                if (existing.id == todo.id) todo else existing
+            }
             saveToday()
         }
     }

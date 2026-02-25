@@ -3,6 +3,7 @@ package com.example.mydayplanner.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mydayplanner.config.Project
+import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.data.PlainJsonTodoRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -67,18 +68,31 @@ class HomeViewModel(
     fun add() = viewModelScope.launch {
         val text = _input.trim()
         if (text.isNotEmpty()) {
-            repo.add(
-                text = text,
-                important = _inputImportant,
-                estimateMinutes = _inputEstimate,
-                project = _inputProject
-            )
-            _input = "" // clear
-            //_inputImportant = false
-            //_inputEstimate = 15
-            //_inputProject = "Other"
+            addTodo(text, _inputImportant, _inputEstimate, _inputProject, null)
+            _input = ""
         }
     }
+
+    fun addTodo(
+        text: String,
+        important: Boolean,
+        estimateMinutes: Int,
+        project: Project,
+        difficulty: TaskDifficulty?
+    ) = viewModelScope.launch {
+        if (text.isNotBlank()) {
+            repo.add(
+                text = text.trim(),
+                important = important,
+                estimateMinutes = estimateMinutes,
+                project = project,
+                difficulty = difficulty
+            )
+            _input = ""
+        }
+    }
+
+    fun updateTodo(todo: Todo) = viewModelScope.launch { repo.update(todo) }
 
     fun toggle(id: String) = viewModelScope.launch { repo.toggle(id) }
     fun remove(id: String) = viewModelScope.launch { repo.remove(id) }
