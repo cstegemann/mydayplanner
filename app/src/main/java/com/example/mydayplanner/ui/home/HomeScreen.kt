@@ -207,16 +207,19 @@ fun HomeScreen(
 @Composable
 private fun DifficultyMixBar(todos: List<Todo>) {
     val visibleTodos = todos.filter { it.project != Project.META }
-    val total = visibleTodos.size
-    if (total == 0) return
+    val totalPlannedMinutes = visibleTodos.sumOf { it.estimateMinutes }
+    if (totalPlannedMinutes <= 0) return
 
     val segments = buildList {
         TaskDifficulty.entries.forEach { diff ->
-            val count = visibleTodos.count { !it.done && it.difficulty == diff }
-            if (count > 0) add(TaskDifficultyDef.byDifficulty.getValue(diff).color to count)
+            val minutes = visibleTodos
+                .asSequence()
+                .filter { !it.done && it.difficulty == diff }
+                .sumOf { it.estimateMinutes }
+            if (minutes > 0) add(TaskDifficultyDef.byDifficulty.getValue(diff).color to minutes)
         }
-        val doneCount = visibleTodos.count { it.done }
-        if (doneCount > 0) add(TaskDifficultyDef.doneColor to doneCount)
+        val doneMinutes = visibleTodos.asSequence().filter { it.done }.sumOf { it.estimateMinutes }
+        if (doneMinutes > 0) add(TaskDifficultyDef.doneColor to doneMinutes)
     }
 
     if (segments.isEmpty()) return
@@ -227,10 +230,10 @@ private fun DifficultyMixBar(todos: List<Todo>) {
             .height(12.dp)
             .clip(MaterialTheme.shapes.small)
     ) {
-        segments.forEach { (color, count) ->
+        segments.forEach { (color, minutes) ->
             Box(
                 modifier = Modifier
-                    .weight(count.toFloat())
+                    .weight(minutes.toFloat())
                     .fillMaxSize()
                     .background(color)
             )
@@ -518,7 +521,7 @@ private fun DifficultyQuestions(
             DifficultyTile(
                 modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.tediousLabel,
-                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
+                color = TaskDifficultyDef.pickerCautionColor,
                 selected = !isFun,
                 onSelected = {
                     val next = if (isDraining) TaskDifficulty.TediousDraining else TaskDifficulty.TediousNormal
@@ -528,7 +531,7 @@ private fun DifficultyQuestions(
             DifficultyTile(
                 modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.funLabel,
-                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.FunNormal).color,
+                color = TaskDifficultyDef.pickerPositiveColor,
                 selected = isFun,
                 onSelected = {
                     val next = if (isDraining) TaskDifficulty.FunDraining else TaskDifficulty.FunNormal
@@ -542,7 +545,7 @@ private fun DifficultyQuestions(
             DifficultyTile(
                 modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.normalLabel,
-                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousNormal).color,
+                color = TaskDifficultyDef.pickerPositiveColor,
                 selected = !isDraining,
                 onSelected = {
                     val next = if (isFun) TaskDifficulty.FunNormal else TaskDifficulty.TediousNormal
@@ -552,7 +555,7 @@ private fun DifficultyQuestions(
             DifficultyTile(
                 modifier = Modifier.weight(1f),
                 title = TaskDifficultyDef.drainingLabel,
-                color = TaskDifficultyDef.byDifficulty.getValue(TaskDifficulty.TediousDraining).color,
+                color = TaskDifficultyDef.pickerCautionColor,
                 selected = isDraining,
                 onSelected = {
                     val next = if (isFun) TaskDifficulty.FunDraining else TaskDifficulty.TediousDraining

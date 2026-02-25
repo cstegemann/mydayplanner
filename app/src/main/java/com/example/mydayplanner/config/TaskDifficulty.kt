@@ -29,14 +29,17 @@ object TaskDifficultyDef {
     val doneColor: Color = Color(0xFF7E57C2)
 
     private val lushGreen = Color(0xFF43A047)
-    private val greenToOrange1 = Color(0xFF66BB6A)
-    private val greenToOrange2 = Color(0xFFFFE2A8)
+    private val paleGreen = Color(0xFF66BB6A)
+    private val paleYellow = Color(0xFFFFE2A8)
     private val orange = Color(0xFFFB8C00)
+
+    val pickerPositiveColor: Color = lushGreen
+    val pickerCautionColor: Color = paleYellow
 
     val tiles: List<DifficultyTileDef> = listOf(
         DifficultyTileDef(TaskDifficulty.FunNormal, "$funLabel + $normalLabel", lushGreen),
-        DifficultyTileDef(TaskDifficulty.FunDraining, "$funLabel + $drainingLabel", greenToOrange1),
-        DifficultyTileDef(TaskDifficulty.TediousNormal, "$tediousLabel + $normalLabel", greenToOrange2),
+        DifficultyTileDef(TaskDifficulty.FunDraining, "$funLabel + $drainingLabel", paleGreen),
+        DifficultyTileDef(TaskDifficulty.TediousNormal, "$tediousLabel + $normalLabel", paleYellow),
         DifficultyTileDef(TaskDifficulty.TediousDraining, "$tediousLabel + $drainingLabel", orange)
     )
 
