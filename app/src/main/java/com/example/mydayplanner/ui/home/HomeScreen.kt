@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -569,7 +568,6 @@ private fun DifficultyTile(
 ) {
     Surface(
         modifier = Modifier
-            .weight(1f)
             .height(58.dp)
             .clickable { onSelected() },
         color = color.copy(alpha = if (selected) 1f else 0.7f),
