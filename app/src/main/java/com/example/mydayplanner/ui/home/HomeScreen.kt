@@ -282,20 +282,14 @@ private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
 
     if (warnings.isEmpty()) return
 
-    Column(
+    Text(
+        text = warnings.joinToString(separator = " | "),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        warnings.forEach { warning ->
-            Text(
-                text = "• $warning",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+    )
     Spacer(Modifier.height(8.dp))
 }
 
