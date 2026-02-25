@@ -279,7 +279,7 @@ private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
 
     val warnings = buildList {
         if (drainingTediousDayMinutes > 120) add("Heavy drain load")
-        if (now.isBefore(LocalTime.NOON) && drainingTediousRemainingMinutes > minutesUntilNoon) add("Tough stuff before noon")
+        if (drainingTediousRemainingMinutes > minutesUntilNoon) add("Tough stuff before noon")
         if (tediousDayMinutes == 0) add("Too comfort-heavy")
         if (plannedWithoutOtherMinutes < 270) add("Plan too light")
         if (plannedWithoutOtherMinutes > 360 || plannedWithOtherMinutes > 480) add("Plan too heavy")
