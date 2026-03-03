@@ -234,7 +234,7 @@ private fun DifficultyMixBar(todos: List<Todo>) {
         TaskDifficulty.entries.forEach { diff ->
             val minutes = visibleTodos
                 .asSequence()
-                .filter { !it.done && it.difficulty == diff }
+                .filter { !it.done && !it.pushedToTomorrow && it.difficulty == diff }
                 .sumOf { it.estimateMinutes }
             if (minutes > 0) add(TaskDifficultyDef.byDifficulty.getValue(diff).color to minutes)
         }
