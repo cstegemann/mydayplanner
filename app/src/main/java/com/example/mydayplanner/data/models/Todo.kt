@@ -10,6 +10,7 @@ data class Todo(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val done: Boolean = false,
+    // Legacy estimate field kept for backward compatibility with existing day JSON files/UI code.
     val timePredicted: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
