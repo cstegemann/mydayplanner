@@ -123,6 +123,7 @@ class PlainJsonTodoRepository(
                 done = false,
                 createdAt = System.currentTimeMillis(),
                 important = important,
+                timePredicted = estimateMinutes,
                 estimateMinutes = estimateMinutes,
                 project = project,
                 difficulty = difficulty
