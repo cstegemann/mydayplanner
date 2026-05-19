@@ -49,8 +49,9 @@ class PlainJsonTodoRepository(
         if (loadedDayKey == today) return@withContext
 
         val todayFile = fileFor(today)
+        val hadTodayFile = todayFile.exists()
 
-        val todayList: MutableList<Todo> = if (todayFile.exists()) {
+        val todayList: MutableList<Todo> = if (hadTodayFile) {
             runCatching { json.decodeFromString<List<Todo>>(todayFile.readText()) }
                 .getOrElse { emptyList() }
                 .toMutableList()
@@ -72,23 +73,34 @@ class PlainJsonTodoRepository(
                     .toList()
             } else emptyList()
 
-            carry.toMutableList().also {
-                it.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project= Project.META))
-                it.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project=Project.META))
-                it.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project=Project.META))
-                it.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project=Project.META))
-                it.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project=Project.META))
-                it.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project=Project.META))
-                // Persist a new (possibly empty) today file so we don't re-import later
-                val f = fileFor(today)
-                val tmp = File.createTempFile("today", ".tmp", dir)
-                tmp.writeText(json.encodeToString(ListSerializer(Todo.serializer()), it))
-                f.delete()
-                tmp.renameTo(f)
+            val initialTodos = carry.toMutableList()
+
+            // load or create today's tracking before deciding whether to inject META tasks
+            loadTracking(today)
+
+            if (_tracking.value.current != Project.FREE_DAY) {
+                initialTodos.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project= Project.META))
+                initialTodos.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project=Project.META))
+                initialTodos.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project=Project.META))
+                initialTodos.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project=Project.META))
+                initialTodos.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project=Project.META))
+                initialTodos.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project=Project.META))
             }
+
+            // Persist a new (possibly empty) today file so we don't re-import later
+            val f = fileFor(today)
+            val tmp = File.createTempFile("today", ".tmp", dir)
+            tmp.writeText(json.encodeToString(ListSerializer(Todo.serializer()), initialTodos))
+            f.delete()
+            tmp.renameTo(f)
+
+            initialTodos
         }
-        // load or create today's tracking
-        loadTracking(today)
+
+        if (hadTodayFile) {
+            // load or create today's tracking
+            loadTracking(today)
+        }
 
         _today.value = todayList
         loadedDayKey = today
