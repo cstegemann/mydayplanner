@@ -214,7 +214,13 @@ class PlainJsonTodoRepository(
         } else {
             val dayDate = runCatching { LocalDate.parse(day) }.getOrNull()
             if (dayDate != null && dayDate.dayOfWeek != DayOfWeek.MONDAY) {
-                val prev = trackingFileFor(dayDate.minusDays(1).toString())
+                var daysToSubtract = 1L
+                var prev = trackingFileFor(dayDate.minusDays(daysToSubtract).toString())
+                val maxLookBack = 3L
+                while (!prev.exists() && daysToSubtract < maxLookBack){
+                    daysToSubtract++
+                    prev = trackingFileFor(dayDate.minusDays(daysToSubtract).toString())
+                }
                 val previousState = if (prev.exists()) {
                     runCatching { json.decodeFromString<DayTracking>(prev.readText()) }
                         .getOrElse { DayTracking() }
