@@ -18,6 +18,7 @@ import java.util.Locale
 
 data class ProjectGroup(
     val project: Project,
+    val label: String,
     val items: List<Todo>
 )
 
@@ -42,20 +43,19 @@ class HistoryViewModel(private val repo: TodoRepository) : ViewModel() {
             val out = mutableListOf<DayHistory>()
             val locale = Locale.getDefault()
             val fmt = DateTimeFormatter.ISO_LOCAL_DATE
-            val projCmp = projectComparator()
             for (k in keys) {
                 val all = repo.getDay(k)
                 if (all.isEmpty()) continue
                 val completed = all.filter { it.done }
                 val groups = completed
-                    .groupBy { it.project }
-                    .toSortedMap(projCmp) // order projects
-                    .map { (project, items) ->
+                    .groupBy { it.trackLabel }
+                    .map { (label, items) ->
+                        val project = items.first().project
                         // Sort items inside a project (e.g., by createdAt then text)
                         val sortedItems = items.sortedWith(
                             compareBy<Todo> { it.createdAt }.thenBy { it.text.lowercase() }
                         )
-                        ProjectGroup(project = project, items = sortedItems)
+                        ProjectGroup(project = project, label = label, items = sortedItems)
                     }
                 val tracking: DayTracking = repo.getDayTracking(k)
                 val totals = tracking.totals // Map<Project, Long>

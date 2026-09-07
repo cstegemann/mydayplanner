@@ -3,19 +3,21 @@ package com.example.mydayplanner
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import com.example.mydayplanner.ui.history.HistoryScreen
 import com.example.mydayplanner.ui.home.HomeScreen
+import com.example.mydayplanner.ui.theme.MydayplannerTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
-            MaterialTheme {
+            MydayplannerTheme {
                 var showHistory by remember { mutableStateOf(false) }
                 if (showHistory) {
                     HistoryScreen(onBack = { showHistory = false })

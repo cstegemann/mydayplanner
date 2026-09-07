@@ -100,7 +100,7 @@ private fun DayBlock(day: DayHistory) {
                 if (idx > 0) Spacer(Modifier.height(6.dp))
                 // Project subheader
                 Text(
-                    text = group.project.displayName,
+                    text = group.label,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -108,7 +108,7 @@ private fun DayBlock(day: DayHistory) {
                 // Items
                 group.items.forEach { t ->
                     val est = formatEstimate(t.estimateMinutes)
-                    if (t.project.selectableInPicker) {
+                    if (t.project.selectableInPicker || t.liveTrackId != null) {
                         Text("• ${t.text}  —  $est", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         Text("• ${t.text}", style = MaterialTheme.typography.bodyMedium)

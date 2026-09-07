@@ -6,10 +6,11 @@ The app is intentionally opinionated for a specific workflow (project-focused pl
 
 ## What it currently does
 
-- Daily todo list persisted as plain JSON files in app-internal storage.
+- Daily todo list persisted as plain JSON files in a user-selected shared folder.
 - Automatic carry-over of unfinished tasks from the most recent previous day.
 - Per-task metadata: importance, project, effort estimate, and optional difficulty.
-- Optional "push to tomorrow" flag.
+- Deferred tasks that can be pushed back 1, 2, 3, 5, or 7 days.
+- Live-track choices loaded from an Obsidian markdown file.
 - Project timer/tracking with per-day totals.
 - Basic history view for recent days.
 
@@ -52,10 +53,12 @@ If Gradle fails very early with a message like `What went wrong: 25.0.2`, that t
 
 ## Data layout (runtime)
 
-The repository stores files under the app's internal files directory in a `days/` folder:
+Choose the Obsidian special folder from the banner in the app. Android's system folder picker grants persistent access without requiring a fragile hard-coded path. The app reads `_live-tracks.md` from the selected folder and stores state under its `mydayplanner/` child folder:
 
 - `YYYY-MM-DD.json` → todo list for that day
 - `YYYY-MM-DD.track.json` → day tracking/timer state
+
+When a folder is selected for the first time, local JSON files are copied only if the corresponding shared file does not already exist. The shared copy wins, avoiding destructive migration. Once configured, shared storage is canonical; if it is temporarily unavailable, the app displays a warning instead of silently creating a divergent local copy.
 
 ## Notes for contributors
 
