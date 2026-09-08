@@ -619,7 +619,7 @@ private fun TodoEditorDialog(
                         ExposedDropdownMenuBox(expanded = pushExpanded, onExpandedChange = { pushExpanded = !pushExpanded }) {
                             OutlinedTextField(
                                 readOnly = true,
-                                value = "$pushDays days",
+                                value = "$pushDays d",
                                 onValueChange = {},
                                 label = { Text("For") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(pushExpanded) },
