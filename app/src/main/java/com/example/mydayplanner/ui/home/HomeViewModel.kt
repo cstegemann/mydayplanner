@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.combine
 import com.example.mydayplanner.data.models.LiveTrack
 
 data class HomeUiState(
+    val isLoading: Boolean = true,
     val todos: List<Todo> = emptyList(),
     val input: String = "",
     val inputImportant: Boolean = false,
@@ -31,13 +32,18 @@ data class HomeUiState(
 class HomeViewModel(
     private val repo: TodoRepository
 ) : ViewModel() {
+    private val loading = kotlinx.coroutines.flow.MutableStateFlow(true)
     init {
         viewModelScope.launch {
-            if (repo is PlainJsonTodoRepository) repo.initializeIfNeeded()
+            try {
+                if (repo is PlainJsonTodoRepository) repo.initializeIfNeeded()
+            } finally {
+                loading.value = false
+            }
         }
     }
     val uiState: StateFlow<HomeUiState> =
-        combine(repo.todayTodos, repo.tracking, repo.liveTracks, repo.storageMessage) { todos, tracking, tracks, message ->
+        combine(repo.todayTodos, repo.tracking, repo.liveTracks, repo.storageMessage, loading) { todos, tracking, tracks, message, isLoading ->
                 val today = java.time.LocalDate.now()
                 val sorted = todos.sortedWith(
                     compareBy<Todo> { it.isDeferred(today) }
@@ -51,7 +57,7 @@ class HomeViewModel(
                         .thenByDescending { it.important }
                         .thenBy { it.createdAt }
                 )
-                HomeUiState(todos = sorted,
+                HomeUiState(isLoading = isLoading, todos = sorted,
                     tracking = tracking,
                     totals = repo.currentTotalsWithLive(),
                     liveTracks = tracks,

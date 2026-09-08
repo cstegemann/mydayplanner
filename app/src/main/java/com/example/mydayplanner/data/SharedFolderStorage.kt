@@ -7,18 +7,22 @@ import java.io.File
 
 internal fun normalizeProviderJsonName(name: String): String? {
     if (!name.endsWith(".json", ignoreCase = true)) return null
-    var logical = name.replace(Regex(" \\(\\d+\\)(?=\\.json$)", RegexOption.IGNORE_CASE), "")
-    if (logical.endsWith(".json.json", ignoreCase = true)) logical = logical.dropLast(5)
-    return logical
+    var logical = name
+    while (logical.endsWith(".json.json", ignoreCase = true)) logical = logical.dropLast(5)
+    logical = logical.replace(Regex(" \\(\\d+\\)(?=\\.json$)", RegexOption.IGNORE_CASE), "")
+    return logical.dropLast(5) + ".json"
 }
 
 internal class SharedFolderStorage(private val context: Context) {
     private val writeLock = Any()
+    private val indexLock = Any()
     private val prefs = context.getSharedPreferences("shared_storage", Context.MODE_PRIVATE)
+    @Volatile private var stateFiles: List<DocumentFile>? = null
     val configuredUri: String? get() = prefs.getString("tree_uri", null)
 
     fun configure(uri: Uri) {
         prefs.edit().putString("tree_uri", uri.toString()).apply()
+        stateFiles = null
     }
 
     fun root(): DocumentFile? = configuredUri?.let { uri ->
@@ -35,7 +39,14 @@ internal class SharedFolderStorage(private val context: Context) {
         return root.findFile("mydayplanner") ?: root.createDirectory("mydayplanner")
     }
 
-    fun names(): List<String> = stateDir()?.listFiles()?.mapNotNull { it.name?.let(::normalizeProviderJsonName) }?.distinct() ?: emptyList()
+    /**
+     * Refreshes the directory index and returns its logical JSON names. SAF directory listings
+     * are comparatively expensive, so subsequent reads reuse this snapshot instead of listing
+     * the entire directory once for every history day.
+     */
+    fun names(): List<String> = refreshIndex()
+        .mapNotNull { it.name?.let(::normalizeProviderJsonName) }
+        .distinct()
 
     fun read(name: String): String? = findStateFile(name)?.let { file ->
         runCatching { context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
@@ -50,6 +61,7 @@ internal class SharedFolderStorage(private val context: Context) {
         runCatching {
             context.contentResolver.openOutputStream(file.uri, "wt")?.bufferedWriter()?.use { it.write(contents) }
                 ?: error("Cannot open $name")
+            stateFiles = null
             true
         }.getOrDefault(false)
     }
@@ -63,9 +75,23 @@ internal class SharedFolderStorage(private val context: Context) {
     }
 
     private fun findStateFile(name: String, dir: DocumentFile? = stateDir()): DocumentFile? {
-        val files = dir?.listFiles().orEmpty()
+        val files = indexedFiles(dir)
         return files.firstOrNull { it.name == name }
             ?: files.filter { it.name?.let(::normalizeProviderJsonName) == name }
                 .maxByOrNull { it.lastModified() }
+    }
+
+    private fun indexedFiles(dir: DocumentFile?): List<DocumentFile> {
+        stateFiles?.let { return it }
+        if (dir == null) return emptyList()
+        return synchronized(indexLock) {
+            stateFiles ?: dir.listFiles().toList().also { stateFiles = it }
+        }
+    }
+
+    private fun refreshIndex(): List<DocumentFile> {
+        val files = stateDir()?.listFiles()?.toList().orEmpty()
+        synchronized(indexLock) { stateFiles = files }
+        return files
     }
 }
