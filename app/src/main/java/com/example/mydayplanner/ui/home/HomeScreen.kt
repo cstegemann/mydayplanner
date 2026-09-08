@@ -34,6 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -183,7 +184,17 @@ fun HomeScreen(
 
                 Spacer(Modifier.height(16.dp))
 
-                if (ui.todos.isEmpty()) {
+                if (ui.isLoading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Loading tasks…", style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else if (ui.todos.isEmpty()) {
                     Text("No tasks yet. Add your first one!", style = MaterialTheme.typography.bodyMedium)
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -28,6 +28,7 @@ fun HistoryScreen(
     LaunchedEffect(Unit) { vm.load() }
     val days by vm.days.collectAsState()
     val message by vm.message.collectAsState()
+    val isLoading by vm.isLoading.collectAsState()
 
     Scaffold(
         topBar = {
@@ -50,6 +51,19 @@ fun HistoryScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (isLoading) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Loading history…")
+                    }
+                }
+            }
             if (message != null) {
                 item {
                     Text(
