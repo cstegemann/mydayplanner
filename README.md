@@ -60,6 +60,8 @@ Choose the Obsidian special folder from the banner in the app. Android's system 
 
 When a folder is selected for the first time, local JSON files are copied only if the corresponding shared file does not already exist. The shared copy wins, avoiding destructive migration. Once configured, shared storage is canonical; if it is temporarily unavailable, the app displays a warning instead of silently creating a divergent local copy.
 
+Some Android document providers add suffixes such as ` (1)` or append a second `.json` extension. The app recognizes those files as their original logical day file and reuses them instead of creating further duplicates; it does not automatically delete existing files, to avoid data loss.
+
 ## Notes for contributors
 
 - This repo is used as an AI-coding playground, so you may find pragmatic or experimental patterns.

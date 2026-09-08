@@ -237,7 +237,15 @@ class PlainJsonTodoRepository(
     // data/PlainJsonTodoRepository.kt  (add these impls)
     override suspend fun getRecentDays(limit: Int): List<String> = withContext(io) {
         // list files like 2025-09-18.json → sort desc → take up to limit
-        (if (shared.root() != null) shared.names().asSequence() else dir.listFiles()?.asSequence()?.map { it.name } ?: emptySequence())
+        val names = when {
+            shared.root() != null -> shared.names().asSequence()
+            shared.configuredUri == null -> dir.listFiles()?.asSequence()?.map { it.name } ?: emptySequence()
+            else -> {
+                _storageMessage.value = "Shared folder unavailable; history cannot be loaded"
+                emptySequence()
+            }
+        }
+        names
             .mapNotNull { name ->
                 if (name.endsWith(".json")) name.removeSuffix(".json") else null
             }
@@ -248,7 +256,10 @@ class PlainJsonTodoRepository(
     override suspend fun getDay(dayKey: String): List<Todo> = withContext(io) {
         val contents = readState("$dayKey.json") ?: return@withContext emptyList()
         runCatching { json.decodeFromString<List<Todo>>(contents) }
-            .getOrElse { emptyList() }
+            .getOrElse {
+                _storageMessage.value = "Could not parse $dayKey.json"
+                emptyList()
+            }
     }
 
     /*

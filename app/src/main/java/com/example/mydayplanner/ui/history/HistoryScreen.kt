@@ -27,6 +27,7 @@ fun HistoryScreen(
 ) {
     LaunchedEffect(Unit) { vm.load() }
     val days by vm.days.collectAsState()
+    val message by vm.message.collectAsState()
 
     Scaffold(
         topBar = {
@@ -49,6 +50,15 @@ fun HistoryScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (message != null) {
+                item {
+                    Text(
+                        text = message.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             items(days, key = { it.dayKey }) { day ->
                 DayBlock(day)
             }

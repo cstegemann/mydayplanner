@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
@@ -584,14 +585,17 @@ private fun TodoEditorDialog(
                             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = projExpanded, onDismissRequest = { projExpanded = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Other") },
-                                onClick = { projExpanded = false; project = Project.Other; liveTrackId = null }
-                            )
                             activeTracks.forEach { track ->
                                 DropdownMenuItem(
                                     text = { Text(track.id) },
                                     onClick = { projExpanded = false; project = Project.Other; liveTrackId = track.id }
+                                )
+                            }
+                            if (activeTracks.none { it.id == "other" }) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Other") },
+                                    onClick = { projExpanded = false; project = Project.Other; liveTrackId = null }
                                 )
                             }
                         }
@@ -708,6 +712,7 @@ private fun DifficultyTile(
             .height(58.dp)
             .clickable { onSelected() },
         color = color.copy(alpha = if (selected) 1f else 0.7f),
+        contentColor = if (color.luminance() > 0.45f) Color(0xFF151515) else Color.White,
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface) else null,
         shape = MaterialTheme.shapes.small
     ) {
