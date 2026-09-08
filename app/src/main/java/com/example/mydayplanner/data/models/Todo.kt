@@ -18,5 +18,13 @@ data class Todo(
     val estimateMinutes: Int = 15,
     val project: Project = Project.Other,
     val pushedToTomorrow: Boolean = false,
+    val liveTrackId: String? = null,
+    val deferredUntil: String? = null,
     val difficulty: TaskDifficulty? = null
-)
+) {
+    fun isDeferred(onDate: java.time.LocalDate): Boolean =
+        deferredUntil?.let { runCatching { java.time.LocalDate.parse(it).isAfter(onDate) }.getOrDefault(false) }
+            ?: pushedToTomorrow
+
+    val trackLabel: String get() = liveTrackId ?: project.displayName
+}

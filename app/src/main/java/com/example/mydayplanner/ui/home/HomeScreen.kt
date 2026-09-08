@@ -41,6 +41,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -55,8 +56,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -79,6 +85,7 @@ private data class TodoEditorDraft(
     val important: Boolean,
     val estimate: Int,
     val project: Project,
+    val liveTrackId: String?,
     val difficulty: TaskDifficulty?
 )
 
@@ -92,6 +99,13 @@ fun HomeScreen(
     val ui by viewModel.uiState.collectAsState()
     var input by remember { mutableStateOf(viewModel.input) }
     var editorDraft by remember { mutableStateOf<TodoEditorDraft?>(null) }
+    val context = LocalContext.current
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            viewModel.configureSharedFolder(uri)
+        }
+    }
 
     val freeDayMode = ui.tracking.isFreeDayMode()
     val freeDayBackground = Color(0xFF6FAF46)
@@ -118,6 +132,13 @@ fun HomeScreen(
                 DifficultyMixBar(ui.todos)
             }
             RiskWarnings(todos = ui.todos, tracking = ui.tracking)
+            if (ui.storageMessage != null || ui.sharedFolderUri == null) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(ui.storageMessage ?: "Shared folder not configured", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { folderPicker.launch(null) }) { Text(if (ui.sharedFolderUri == null) "Choose folder" else "Reconnect") }
+                    if (ui.sharedFolderUri != null) TextButton(onClick = viewModel::refreshSharedData) { Text("Refresh") }
+                }
+            }
             Column(
                 modifier = Modifier
                     .padding(16.dp)
@@ -132,6 +153,7 @@ fun HomeScreen(
                                 important = false,
                                 estimate = 15,
                                 project = Project.Other,
+                                liveTrackId = null,
                                 difficulty = TaskDifficulty.TediousNormal
                             )
                         }
@@ -151,6 +173,7 @@ fun HomeScreen(
                                     important = false,
                                     estimate = 15,
                                     project = Project.Other,
+                                    liveTrackId = null,
                                     difficulty = TaskDifficulty.TediousNormal
                                 )
                             }
@@ -168,7 +191,6 @@ fun HomeScreen(
                             TodoRow(
                                 todo = todo,
                                 onToggle = { viewModel.toggle(todo.id) },
-                                onPushToTomorrow = { viewModel.togglePushToTomorrow(todo.id) },
                                 onOpenEditor = {
                                     editorDraft = TodoEditorDraft(
                                         id = todo.id,
@@ -176,6 +198,7 @@ fun HomeScreen(
                                         important = todo.important,
                                         estimate = todo.estimateMinutes,
                                         project = todo.project,
+                                        liveTrackId = todo.liveTrackId,
                                         difficulty = todo.difficulty
                                     )
                                 }
@@ -196,6 +219,11 @@ fun HomeScreen(
                 draft.id?.let { viewModel.remove(it) }
                 editorDraft = null
             },
+            activeTracks = ui.liveTracks.filter { it.active },
+            onPushBack = { days ->
+                draft.id?.let { viewModel.pushBack(it, days) }
+                editorDraft = null
+            },
             onSave = { edited ->
                 if (edited.id == null) {
                     viewModel.addTodo(
@@ -203,6 +231,7 @@ fun HomeScreen(
                         important = edited.important,
                         estimateMinutes = edited.estimate,
                         project = edited.project,
+                        liveTrackId = edited.liveTrackId,
                         difficulty = edited.difficulty
                     )
                     input = ""
@@ -214,6 +243,7 @@ fun HomeScreen(
                             important = edited.important,
                             estimateMinutes = edited.estimate,
                             project = edited.project,
+                            liveTrackId = edited.liveTrackId,
                             difficulty = edited.difficulty
                         )
                     )
@@ -226,6 +256,7 @@ fun HomeScreen(
 
 @Composable
 private fun DifficultyMixBar(todos: List<Todo>) {
+    val today = java.time.LocalDate.now()
     val visibleTodos = todos.filter { it.project != Project.META }
     val totalPlannedMinutes = visibleTodos.sumOf { it.estimateMinutes }
     if (totalPlannedMinutes <= 0) return
@@ -234,7 +265,7 @@ private fun DifficultyMixBar(todos: List<Todo>) {
         TaskDifficulty.entries.forEach { diff ->
             val minutes = visibleTodos
                 .asSequence()
-                .filter { !it.done && !it.pushedToTomorrow && it.difficulty == diff }
+                .filter { !it.done && !it.isDeferred(today) && it.difficulty == diff }
                 .sumOf { it.estimateMinutes }
             if (minutes > 0) add(TaskDifficultyDef.byDifficulty.getValue(diff).color to minutes)
         }
@@ -267,7 +298,7 @@ private fun DifficultyMixBar(todos: List<Todo>) {
 private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
     if (tracking.isFreeDayMode()) return
 
-    val dayPlanTodos = todos.filter { !it.pushedToTomorrow && it.project != Project.META }
+    val dayPlanTodos = todos.filter { !it.isDeferred(java.time.LocalDate.now()) && it.project != Project.META }
     if (dayPlanTodos.isEmpty()) return
 
     val remainingTodos = dayPlanTodos.filter { !it.done }
@@ -338,8 +369,9 @@ fun MultiUseTopBar(
 
     val remainingMinutes by remember(todos) {
         derivedStateOf {
+            val today = java.time.LocalDate.now()
             todos.asSequence()
-                .filter { !it.done && !it.pushedToTomorrow && it.project in Project.timedList }
+                .filter { !it.done && !it.isDeferred(today) && it.project != Project.META }
                 .sumOf { it.estimateMinutes }
         }
     }
@@ -363,31 +395,10 @@ fun MultiUseTopBar(
             }
         },
         actions = {
-            var expanded by remember { mutableStateOf(false) }
-            val current = tracking.current
-            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-                val label = current?.displayName ?: "----"
-                OutlinedTextField(
-                    readOnly = true,
-                    value = label,
-                    onValueChange = {},
-                    label = { Text("Current") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    modifier = Modifier
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        .widthIn(min = 60.dp, max = 120.dp)
-                )
-                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    DropdownMenuItem(text = { Text("----") }, onClick = { expanded = false; viewModel.onSelectCurrentProject(null) })
-                    HorizontalDivider()
-                    Project.currentList.forEach { p ->
-                        DropdownMenuItem(
-                            text = { Text(p.displayName) },
-                            onClick = { expanded = false; viewModel.onSelectCurrentProject(p) }
-                        )
-                    }
-                }
-            }
+            Text("Free day", style = MaterialTheme.typography.labelMedium)
+            Switch(checked = freeDayMode, onCheckedChange = {
+                viewModel.onSelectCurrentProject(if (it) Project.FREE_DAY else null)
+            })
         }
     )
 }
@@ -396,11 +407,11 @@ fun MultiUseTopBar(
 private fun TodoRow(
     todo: Todo,
     onToggle: () -> Unit,
-    onPushToTomorrow: () -> Unit,
     onOpenEditor: () -> Unit
 ) {
+    val deferred = todo.isDeferred(java.time.LocalDate.now())
     val bg = if (todo.important) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-    else if (todo.pushedToTomorrow) Color.Gray
+    else if (deferred) Color.Gray
     else MaterialTheme.colorScheme.surface
 
     val difficultyColor = todo.difficulty?.let { TaskDifficultyDef.byDifficulty[it]?.color }
@@ -463,15 +474,12 @@ private fun TodoRow(
                             Text("•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Text(
-                            text = todo.project.displayName,
+                            text = todo.trackLabel,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
                         )
-                        Text("•", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        TextButton(onClick = onPushToTomorrow) {
-                            Text(if (todo.pushedToTomorrow) "do today" else "not today")
-                        }
+                        if (deferred) Text("Back ${todo.deferredUntil ?: "tomorrow"}", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -486,12 +494,16 @@ private fun TodoEditorDialog(
     isNew: Boolean,
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
+    activeTracks: List<com.example.mydayplanner.data.models.LiveTrack>,
+    onPushBack: (Int) -> Unit,
     onSave: (TodoEditorDraft) -> Unit
 ) {
     var text by remember(draft) { mutableStateOf(draft.text) }
     var important by remember(draft) { mutableStateOf(draft.important) }
     var estimate by remember(draft) { mutableIntStateOf(draft.estimate) }
     var project by remember(draft) { mutableStateOf(draft.project) }
+    var liveTrackId by remember(draft) { mutableStateOf(draft.liveTrackId) }
+    var pushDays by remember(draft) { mutableIntStateOf(1) }
     var selectedDifficulty by remember(draft) { mutableStateOf(draft.difficulty ?: TaskDifficulty.TediousNormal) }
 
     fun save() = onSave(
@@ -500,6 +512,7 @@ private fun TodoEditorDialog(
             important = important,
             estimate = estimate,
             project = project,
+            liveTrackId = liveTrackId,
             difficulty = selectedDifficulty
         )
     )
@@ -565,17 +578,24 @@ private fun TodoEditorDialog(
                     ) {
                         OutlinedTextField(
                             readOnly = true,
-                            value = project.displayName,
+                            value = liveTrackId ?: project.displayName,
                             onValueChange = {},
                             label = { Text("Project") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = projExpanded) },
                             modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = projExpanded, onDismissRequest = { projExpanded = false }) {
-                            Project.pickerList.forEach { p ->
+                            activeTracks.forEach { track ->
                                 DropdownMenuItem(
-                                    text = { Text(p.displayName) },
-                                    onClick = { projExpanded = false; project = p }
+                                    text = { Text(track.id) },
+                                    onClick = { projExpanded = false; project = Project.Other; liveTrackId = track.id }
+                                )
+                            }
+                            if (activeTracks.none { it.id == "other" }) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Other") },
+                                    onClick = { projExpanded = false; project = Project.Other; liveTrackId = null }
                                 )
                             }
                         }
@@ -591,6 +611,27 @@ private fun TodoEditorDialog(
                         }
                     }
                     Text("Important")
+                }
+                if (!isNew) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        var pushExpanded by remember { mutableStateOf(false) }
+                        Button(onClick = { onPushBack(pushDays) }) { Text("Push back") }
+                        ExposedDropdownMenuBox(expanded = pushExpanded, onExpandedChange = { pushExpanded = !pushExpanded }) {
+                            OutlinedTextField(
+                                readOnly = true,
+                                value = "$pushDays days",
+                                onValueChange = {},
+                                label = { Text("For") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(pushExpanded) },
+                                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).width(110.dp)
+                            )
+                            ExposedDropdownMenu(expanded = pushExpanded, onDismissRequest = { pushExpanded = false }) {
+                                listOf(1, 2, 3, 5, 7).forEach { days ->
+                                    DropdownMenuItem(text = { Text("$days days") }, onClick = { pushDays = days; pushExpanded = false })
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -671,6 +712,7 @@ private fun DifficultyTile(
             .height(58.dp)
             .clickable { onSelected() },
         color = color.copy(alpha = if (selected) 1f else 0.7f),
+        contentColor = if (color.luminance() > 0.45f) Color(0xFF151515) else Color.White,
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.onSurface) else null,
         shape = MaterialTheme.shapes.small
     ) {

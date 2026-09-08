@@ -1,10 +1,13 @@
 package com.example.mydayplanner.data
 
 import android.content.Context
+import android.net.Uri
 import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
+import com.example.mydayplanner.data.models.LiveTrack
+import com.example.mydayplanner.data.models.LiveTrackParser
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,39 +36,91 @@ class PlainJsonTodoRepository(
     private var loadedDayKey: String? = null
 
     private val dir: File = File(context.filesDir, "days").apply { mkdirs() }
+    private val shared = SharedFolderStorage(context)
 
-    private fun fileFor(day: String): File = File(dir, "$day.json")
+    private val _liveTracks = MutableStateFlow<List<LiveTrack>>(emptyList())
+    override val liveTracks = _liveTracks.asStateFlow()
+    private val _storageMessage = MutableStateFlow<String?>(null)
+    override val storageMessage = _storageMessage.asStateFlow()
+    override val sharedFolderUri: String? get() = shared.configuredUri
+
+    private fun stateExists(name: String): Boolean =
+        when {
+            shared.root() != null -> name in shared.names()
+            shared.configuredUri == null -> File(dir, name).exists()
+            else -> false
+        }
+
+    private fun readState(name: String): String? =
+        when {
+            shared.root() != null -> shared.read(name)
+            shared.configuredUri == null -> File(dir, name).takeIf(File::exists)?.readText()
+            else -> null
+        }
+
+    private fun writeState(name: String, contents: String) {
+        if (shared.root() != null) {
+            if (!shared.write(name, contents)) _storageMessage.value = "Could not write shared folder"
+        } else if (shared.configuredUri == null) {
+            File(dir, name).writeText(contents)
+        } else {
+            _storageMessage.value = "Shared folder unavailable; changes cannot be saved"
+        }
+    }
+
+    override suspend fun configureSharedFolder(uri: Uri) = withContext(io) {
+        shared.configure(uri)
+        shared.copyMissingFrom(dir)
+        loadedDayKey = null
+        refreshSharedData()
+        ensureLoadedForToday()
+    }
+
+    override suspend fun refreshSharedData() = withContext(io) {
+        val root = shared.root()
+        if (root == null) {
+            _storageMessage.value = if (shared.configuredUri == null) "Choose your Obsidian folder to enable sync" else "Shared folder unavailable"
+            return@withContext
+        }
+        val markdown = shared.readConfig()
+        if (markdown == null) {
+            _storageMessage.value = "_live-tracks.md not found; keeping previous tracks"
+            return@withContext
+        }
+        val parsed = LiveTrackParser.parse(markdown)
+        _liveTracks.value = parsed.tracks
+        _storageMessage.value = parsed.warnings.takeIf { it.isNotEmpty() }?.joinToString("; ")
+    }
 
     private val _today = MutableStateFlow<List<Todo>>(emptyList())
     override val todayTodos = _today.asStateFlow()
     private var initialized = false
 
     suspend fun initializeIfNeeded() {
-        if (!initialized) { ensureLoadedForToday(); initialized = true }
+        if (!initialized) { refreshSharedData(); ensureLoadedForToday(); initialized = true }
     }
 
     private suspend fun ensureLoadedForToday() = withContext(io) {
         val today = todayKey()
         if (loadedDayKey == today) return@withContext
 
-        val todayFile = fileFor(today)
-        val hadTodayFile = todayFile.exists()
+        val hadTodayFile = stateExists("$today.json")
 
         val todayList: MutableList<Todo> = if (hadTodayFile) {
-            runCatching { json.decodeFromString<List<Todo>>(todayFile.readText()) }
+            runCatching { json.decodeFromString<List<Todo>>(readState("$today.json") ?: "[]") }
                 .getOrElse { emptyList() }
                 .toMutableList()
         } else {
             // First touch of the day: build from yesterday's unfinished
             var i: Long = 1
-            var yFile = fileFor(lastActiveDayKey(i))
+            var previousDay = lastActiveDayKey(i)
             val maxBack = 30
-            while (!yFile.exists() && i <= maxBack){
+            while (!stateExists("$previousDay.json") && i <= maxBack){
                 i++
-                yFile = fileFor(lastActiveDayKey(i))
+                previousDay = lastActiveDayKey(i)
             }
-            val carry = if (yFile.exists()) {
-                runCatching { json.decodeFromString<List<Todo>>(yFile.readText()) }
+            val carry = if (stateExists("$previousDay.json")) {
+                runCatching { json.decodeFromString<List<Todo>>(readState("$previousDay.json") ?: "[]") }
                     .getOrElse { emptyList() }
                     .asSequence()
                     .filter { !it.done }
@@ -88,11 +143,7 @@ class PlainJsonTodoRepository(
             }
 
             // Persist a new (possibly empty) today file so we don't re-import later
-            val f = fileFor(today)
-            val tmp = File.createTempFile("today", ".tmp", dir)
-            tmp.writeText(json.encodeToString(ListSerializer(Todo.serializer()), initialTodos))
-            f.delete()
-            tmp.renameTo(f)
+            writeState("$today.json", json.encodeToString(ListSerializer(Todo.serializer()), initialTodos))
 
             initialTodos
         }
@@ -112,12 +163,7 @@ class PlainJsonTodoRepository(
     }
 
     private suspend fun saveToday() = withContext(io) {
-        val f = fileFor(todayKey())
-        // Write atomically: write temp, then replace
-        val tmp = File.createTempFile("today", ".tmp", dir)
-        tmp.writeText(json.encodeToString(ListSerializer(Todo.serializer()), _today.value))
-        f.delete()
-        tmp.renameTo(f)
+        writeState("${todayKey()}.json", json.encodeToString(ListSerializer(Todo.serializer()), _today.value))
     }
 
     override suspend fun add(
@@ -125,6 +171,7 @@ class PlainJsonTodoRepository(
         important: Boolean,
         estimateMinutes: Int,
         project: Project,
+        liveTrackId: String?,
         difficulty: TaskDifficulty?
     ) = withContext(io) {
         if (text.isBlank()) return@withContext
@@ -138,6 +185,7 @@ class PlainJsonTodoRepository(
                 timePredicted = estimateMinutes,
                 estimateMinutes = estimateMinutes,
                 project = project,
+                liveTrackId = liveTrackId,
                 difficulty = difficulty
             )
             _today.value = newList
@@ -174,12 +222,11 @@ class PlainJsonTodoRepository(
         }
     }
 
-    override suspend fun togglePushToTomorrow(id: String) = withContext(io) {
+    override suspend fun pushBack(id: String, days: Int) = withContext(io) {
         withTodayLoaded {
             val updated = _today.value.map { t ->
                 if (t.id == id) {
-                    val pushed = !t.pushedToTomorrow
-                    t.copy(pushedToTomorrow = pushed)
+                    t.copy(pushedToTomorrow = false, deferredUntil = LocalDate.now(zone).plusDays(days.coerceAtLeast(1).toLong()).toString())
                 } else t
             }
             _today.value = updated
@@ -190,52 +237,57 @@ class PlainJsonTodoRepository(
     // data/PlainJsonTodoRepository.kt  (add these impls)
     override suspend fun getRecentDays(limit: Int): List<String> = withContext(io) {
         // list files like 2025-09-18.json → sort desc → take up to limit
-        dir.listFiles()
-            ?.asSequence()
-            ?.mapNotNull { f ->
-                val name = f.name
+        val names = when {
+            shared.root() != null -> shared.names().asSequence()
+            shared.configuredUri == null -> dir.listFiles()?.asSequence()?.map { it.name } ?: emptySequence()
+            else -> {
+                _storageMessage.value = "Shared folder unavailable; history cannot be loaded"
+                emptySequence()
+            }
+        }
+        names
+            .mapNotNull { name ->
                 if (name.endsWith(".json")) name.removeSuffix(".json") else null
             }
-            ?.filter { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
-            ?.sortedDescending()
-            ?.take(limit)
-            ?.toList()
-            ?: emptyList()
+            .filter { it.matches(Regex("""\d{4}-\d{2}-\d{2}""")) }
+            .sortedDescending().take(limit).toList()
     }
 
     override suspend fun getDay(dayKey: String): List<Todo> = withContext(io) {
-        val f = fileFor(dayKey)
-        if (!f.exists()) return@withContext emptyList()
-        runCatching { json.decodeFromString<List<Todo>>(f.readText()) }
-            .getOrElse { emptyList() }
+        val contents = readState("$dayKey.json") ?: return@withContext emptyList()
+        runCatching { json.decodeFromString<List<Todo>>(contents) }
+            .getOrElse {
+                _storageMessage.value = "Could not parse $dayKey.json"
+                emptyList()
+            }
     }
 
     /*
     * TRACKING STUFF
     * */
 
-    private fun trackingFileFor(day: String): File = File(dir, "$day.track.json")
+    private fun trackingName(day: String): String = "$day.track.json"
 
     private val _tracking = MutableStateFlow(DayTracking())
     override val tracking = _tracking.asStateFlow()
 
     private suspend fun loadTracking(day: String = todayKey()) = withContext(io) {
-        val tf = trackingFileFor(day)
-        val state = if (tf.exists()) {
-            runCatching { json.decodeFromString<DayTracking>(tf.readText()) }
+        val name = trackingName(day)
+        val state = if (stateExists(name)) {
+            runCatching { json.decodeFromString<DayTracking>(readState(name) ?: "{}") }
                 .getOrElse { DayTracking() }
         } else {
             val dayDate = runCatching { LocalDate.parse(day) }.getOrNull()
             if (dayDate != null && dayDate.dayOfWeek != DayOfWeek.MONDAY) {
                 var daysToSubtract = 1L
-                var prev = trackingFileFor(dayDate.minusDays(daysToSubtract).toString())
+                var prevName = trackingName(dayDate.minusDays(daysToSubtract).toString())
                 val maxLookBack = 3L
-                while (!prev.exists() && daysToSubtract < maxLookBack){
+                while (!stateExists(prevName) && daysToSubtract < maxLookBack){
                     daysToSubtract++
-                    prev = trackingFileFor(dayDate.minusDays(daysToSubtract).toString())
+                    prevName = trackingName(dayDate.minusDays(daysToSubtract).toString())
                 }
-                val previousState = if (prev.exists()) {
-                    runCatching { json.decodeFromString<DayTracking>(prev.readText()) }
+                val previousState = if (stateExists(prevName)) {
+                    runCatching { json.decodeFromString<DayTracking>(readState(prevName) ?: "{}") }
                         .getOrElse { DayTracking() }
                 } else DayTracking()
 
@@ -252,11 +304,7 @@ class PlainJsonTodoRepository(
     }
 
     private suspend fun saveTracking(day: String = todayKey()) = withContext(io) {
-        val tf = trackingFileFor(day)
-        val tmp = File.createTempFile("track", ".tmp", dir)
-        tmp.writeText(json.encodeToString(DayTracking.serializer(), _tracking.value))
-        tf.delete()
-        tmp.renameTo(tf)
+        writeState(trackingName(day), json.encodeToString(DayTracking.serializer(), _tracking.value))
     }
 
     override suspend fun setCurrentProject(project: Project?){
@@ -298,9 +346,8 @@ class PlainJsonTodoRepository(
 
     // Implement the interface method
     override suspend fun getDayTracking(dayKey: String): DayTracking = withContext(io) {
-        val tf = trackingFileFor(dayKey)
-        if (!tf.exists()) return@withContext DayTracking()
-        runCatching { json.decodeFromString<DayTracking>(tf.readText()) }
+        val contents = readState(trackingName(dayKey)) ?: return@withContext DayTracking()
+        runCatching { json.decodeFromString<DayTracking>(contents) }
             .getOrElse { DayTracking() }
     }
 

@@ -13,6 +13,7 @@ import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.flow.combine
+import com.example.mydayplanner.data.models.LiveTrack
 
 data class HomeUiState(
     val todos: List<Todo> = emptyList(),
@@ -21,7 +22,10 @@ data class HomeUiState(
     val inputEstimateMinutes: Int = 15,
     val inputProject: Project = Project.Other,
     val tracking: DayTracking = DayTracking(),
-    val totals: Map<Project, Long> = emptyMap()
+    val totals: Map<Project, Long> = emptyMap(),
+    val liveTracks: List<LiveTrack> = emptyList(),
+    val storageMessage: String? = null,
+    val sharedFolderUri: String? = null
 )
 
 class HomeViewModel(
@@ -33,9 +37,10 @@ class HomeViewModel(
         }
     }
     val uiState: StateFlow<HomeUiState> =
-        combine(repo.todayTodos, repo.tracking) { todos, tracking ->
+        combine(repo.todayTodos, repo.tracking, repo.liveTracks, repo.storageMessage) { todos, tracking, tracks, message ->
+                val today = java.time.LocalDate.now()
                 val sorted = todos.sortedWith(
-                    compareBy<Todo> {it.pushedToTomorrow}
+                    compareBy<Todo> { it.isDeferred(today) }
                         .thenBy { it.done }
                         .thenByDescending {
                             if (it.project == Project.META) 0 else 1
@@ -48,7 +53,10 @@ class HomeViewModel(
                 )
                 HomeUiState(todos = sorted,
                     tracking = tracking,
-                    totals = repo.currentTotalsWithLive()
+                    totals = repo.currentTotalsWithLive(),
+                    liveTracks = tracks,
+                    storageMessage = message,
+                    sharedFolderUri = repo.sharedFolderUri
                 )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -68,7 +76,7 @@ class HomeViewModel(
     fun add() = viewModelScope.launch {
         val text = _input.trim()
         if (text.isNotEmpty()) {
-            addTodo(text, _inputImportant, _inputEstimate, _inputProject, null)
+            addTodo(text, _inputImportant, _inputEstimate, _inputProject, difficulty = null)
             _input = ""
         }
     }
@@ -78,6 +86,7 @@ class HomeViewModel(
         important: Boolean,
         estimateMinutes: Int,
         project: Project,
+        liveTrackId: String? = null,
         difficulty: TaskDifficulty?
     ) = viewModelScope.launch {
         if (text.isNotBlank()) {
@@ -87,6 +96,7 @@ class HomeViewModel(
                     important = important,
                     estimateMinutes = part.estimateMinutes,
                     project = project,
+                    liveTrackId = liveTrackId,
                     difficulty = difficulty
                 )
             }
@@ -98,10 +108,12 @@ class HomeViewModel(
 
     fun toggle(id: String) = viewModelScope.launch { repo.toggle(id) }
     fun remove(id: String) = viewModelScope.launch { repo.remove(id) }
-    fun togglePushToTomorrow(id: String) = viewModelScope.launch { repo.togglePushToTomorrow(id) }
+    fun pushBack(id: String, days: Int) = viewModelScope.launch { repo.pushBack(id, days) }
     fun onSelectCurrentProject(p: Project?) = viewModelScope.launch {
         repo.setCurrentProject(p)
     }
+    fun configureSharedFolder(uri: android.net.Uri) = viewModelScope.launch { repo.configureSharedFolder(uri) }
+    fun refreshSharedData() = viewModelScope.launch { repo.refreshSharedData() }
 }
 
 internal data class TodoPart(

@@ -18,6 +18,7 @@ import java.util.Locale
 
 data class ProjectGroup(
     val project: Project,
+    val label: String,
     val items: List<Todo>
 )
 
@@ -28,34 +29,39 @@ data class DayHistory(
     val groups: List<ProjectGroup>
 )
 
-private fun projectComparator(): Comparator<Project> = Comparator { a, b ->
-    a.sortOrder - b.sortOrder
-}
-
 class HistoryViewModel(private val repo: TodoRepository) : ViewModel() {
     private val _days = MutableStateFlow<List<DayHistory>>(emptyList())
     val days: StateFlow<List<DayHistory>> = _days
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message
 
     fun load(limit: Int = 28) {
         viewModelScope.launch {
-            val keys = repo.getRecentDays(limit)
+            _message.value = null
+            val keys = runCatching { repo.getRecentDays(limit) }.getOrElse {
+                _message.value = "Could not read history: ${it.message ?: "unknown storage error"}"
+                return@launch
+            }
             val out = mutableListOf<DayHistory>()
             val locale = Locale.getDefault()
             val fmt = DateTimeFormatter.ISO_LOCAL_DATE
-            val projCmp = projectComparator()
             for (k in keys) {
-                val all = repo.getDay(k)
+                val all = runCatching { repo.getDay(k) }.getOrNull()
+                if (all == null) {
+                    _message.value = "Some history files could not be read"
+                    continue
+                }
                 if (all.isEmpty()) continue
                 val completed = all.filter { it.done }
                 val groups = completed
-                    .groupBy { it.project }
-                    .toSortedMap(projCmp) // order projects
-                    .map { (project, items) ->
+                    .groupBy { it.trackLabel }
+                    .map { (label, items) ->
+                        val project = items.first().project
                         // Sort items inside a project (e.g., by createdAt then text)
                         val sortedItems = items.sortedWith(
                             compareBy<Todo> { it.createdAt }.thenBy { it.text.lowercase() }
                         )
-                        ProjectGroup(project = project, items = sortedItems)
+                        ProjectGroup(project = project, label = label, items = sortedItems)
                     }
                 val tracking: DayTracking = repo.getDayTracking(k)
                 val totals = tracking.totals // Map<Project, Long>
@@ -66,6 +72,11 @@ class HistoryViewModel(private val repo: TodoRepository) : ViewModel() {
                 //}
             }
             _days.value = out
+            if (keys.isEmpty() && _message.value == null) {
+                _message.value = repo.storageMessage.value ?: "No history JSON files were found in the shared folder"
+            } else if (keys.isNotEmpty() && out.isEmpty() && _message.value == null) {
+                _message.value = "History files were found, but they contain no readable tasks"
+            }
         }
     }
 }

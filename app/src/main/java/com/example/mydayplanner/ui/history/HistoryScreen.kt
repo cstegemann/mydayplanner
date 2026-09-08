@@ -27,6 +27,7 @@ fun HistoryScreen(
 ) {
     LaunchedEffect(Unit) { vm.load() }
     val days by vm.days.collectAsState()
+    val message by vm.message.collectAsState()
 
     Scaffold(
         topBar = {
@@ -49,6 +50,15 @@ fun HistoryScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (message != null) {
+                item {
+                    Text(
+                        text = message.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             items(days, key = { it.dayKey }) { day ->
                 DayBlock(day)
             }
@@ -100,7 +110,7 @@ private fun DayBlock(day: DayHistory) {
                 if (idx > 0) Spacer(Modifier.height(6.dp))
                 // Project subheader
                 Text(
-                    text = group.project.displayName,
+                    text = group.label,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -108,7 +118,7 @@ private fun DayBlock(day: DayHistory) {
                 // Items
                 group.items.forEach { t ->
                     val est = formatEstimate(t.estimateMinutes)
-                    if (t.project.selectableInPicker) {
+                    if (t.project.selectableInPicker || t.liveTrackId != null) {
                         Text("• ${t.text}  —  $est", style = MaterialTheme.typography.bodyMedium)
                     } else {
                         Text("• ${t.text}", style = MaterialTheme.typography.bodyMedium)
