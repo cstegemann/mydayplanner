@@ -11,6 +11,7 @@ class TodoConfigParserTest {
         areas:
           - id: work
             name: Work
+            icon: 💼
           - id: physical
         ```
         ## Active Projects
@@ -20,6 +21,7 @@ class TodoConfigParserTest {
             name: App
             area: work
             tags: [delivery]
+            icon: 📱
         ```
         ## Dormant Projects
         ```yaml
@@ -62,6 +64,9 @@ class TodoConfigParserTest {
         val config = TodoConfigParser.parse(markdown)
         assertEquals(listOf("work", "physical"), config.areas.map { it.id })
         assertEquals("App", config.projects.single().name)
+        assertEquals("💼", config.areas.first().icon)
+        assertEquals("📱", config.projects.single().icon)
+        assertEquals(null, config.areas.last().icon)
         assertEquals(listOf("stretch"), config.routines.map { it.id })
         assertEquals(listOf("work", "free"), config.routines.single().daytypes)
         assertEquals(listOf("work"), config.rules.first().daytypes)

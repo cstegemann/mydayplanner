@@ -56,9 +56,6 @@ class HomeViewModel(
                 val sorted = todos.sortedWith(
                     compareBy<Todo> { it.isDeferred(today) }
                         .thenBy { it.done }
-                        .thenByDescending {
-                            if (it.project == Project.Other) 0 else 1
-                        }
                         .thenByDescending { it.important }
                         .thenBy { it.createdAt }
                 )
@@ -72,6 +69,7 @@ class HomeViewModel(
         }
     val uiState: StateFlow<HomeUiState> = combine(base, repo.config, repo.configError, repo.routineProgress) { state, config, error, progress ->
         state.copy(config=config, configError=error, routineProgress=progress,
+            todos=sortTodosByProject(state.todos, config),
             ruleNotices=config?.let { evaluateRules(it, state.todos, progress, state.tracking.isFreeDay()) }.orEmpty())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
@@ -134,6 +132,16 @@ class HomeViewModel(
 }
 
 private fun DayTracking.isFreeDay() = current == Project.FREE_DAY
+
+internal fun sortTodosByProject(todos: List<Todo>, config: TodoConfig?): List<Todo> {
+    val configuredOrder = config?.projects?.mapIndexed { index, project -> project.id to index }?.toMap().orEmpty()
+    val configuredProjectCount = configuredOrder.size
+    return todos.sortedWith(
+        compareBy<Todo> { configuredOrder[it.liveTrackId] ?: (configuredProjectCount + it.project.sortOrder) }
+            .thenByDescending { it.important }
+            .thenBy { it.createdAt }
+    )
+}
 
 internal data class TodoPart(
     val text: String,
