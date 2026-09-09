@@ -7,7 +7,9 @@ import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.data.models.LiveTrack
-import com.example.mydayplanner.data.models.LiveTrackParser
+import com.example.mydayplanner.config.TodoConfig
+import com.example.mydayplanner.config.TodoConfigParser
+import com.example.mydayplanner.data.models.RoutineProgress
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,6 +45,12 @@ class PlainJsonTodoRepository(
     private val _storageMessage = MutableStateFlow<String?>(null)
     override val storageMessage = _storageMessage.asStateFlow()
     override val sharedFolderUri: String? get() = shared.configuredUri
+    private val _config = MutableStateFlow<TodoConfig?>(null)
+    override val config = _config.asStateFlow()
+    private val _configError = MutableStateFlow<String?>(null)
+    override val configError = _configError.asStateFlow()
+    private val _routineProgress = MutableStateFlow(RoutineProgress())
+    override val routineProgress = _routineProgress.asStateFlow()
 
     private fun stateExists(name: String): Boolean =
         when {
@@ -73,7 +81,7 @@ class PlainJsonTodoRepository(
         shared.copyMissingFrom(dir)
         loadedDayKey = null
         refreshSharedData()
-        ensureLoadedForToday()
+        if (_config.value != null) ensureLoadedForToday()
     }
 
     override suspend fun refreshSharedData() = withContext(io) {
@@ -84,12 +92,21 @@ class PlainJsonTodoRepository(
         }
         val markdown = shared.readConfig()
         if (markdown == null) {
-            _storageMessage.value = "_live-tracks.md not found; keeping previous tracks"
+            _configError.value = "todo_config.md not found in the selected Obsidian folder"
             return@withContext
         }
-        val parsed = LiveTrackParser.parse(markdown)
-        _liveTracks.value = parsed.tracks
-        _storageMessage.value = parsed.warnings.takeIf { it.isNotEmpty() }?.joinToString("; ")
+        try {
+            val parsed = TodoConfigParser.parse(markdown)
+            _config.value = parsed
+            _liveTracks.value = parsed.projects.map { LiveTrack(it.id, it.active, it.tags, it.name, it.area) }
+            _configError.value = null
+            _storageMessage.value = null
+            if (initialized) ensureLoadedForToday()
+        } catch (e: Exception) {
+            _config.value = null
+            _liveTracks.value = emptyList()
+            _configError.value = "todo_config.md: ${e.message ?: "invalid configuration"}"
+        }
     }
 
     private val _today = MutableStateFlow<List<Todo>>(emptyList())
@@ -97,7 +114,11 @@ class PlainJsonTodoRepository(
     private var initialized = false
 
     suspend fun initializeIfNeeded() {
-        if (!initialized) { refreshSharedData(); ensureLoadedForToday(); initialized = true }
+        if (!initialized) {
+            refreshSharedData()
+            if (_config.value != null) ensureLoadedForToday()
+            initialized = true
+        }
     }
 
     private suspend fun ensureLoadedForToday() = withContext(io) {
@@ -130,17 +151,8 @@ class PlainJsonTodoRepository(
 
             val initialTodos = carry.toMutableList()
 
-            // load or create today's tracking before deciding whether to inject META tasks
+            // Load today's profile before creating the empty day file.
             loadTracking(today)
-
-            if (_tracking.value.current != Project.FREE_DAY) {
-                initialTodos.add(Todo(text="Tagesplan", important = true, timePredicted = 15, project= Project.META))
-                initialTodos.add(Todo(text="Vormittags keine visuelle Unterhaltung", important = true, timePredicted = 0, project=Project.META))
-                initialTodos.add(Todo(text="Vor dem Mittagessen 3h", important = true, timePredicted = 0, project=Project.META))
-                initialTodos.add(Todo(text="Nach dem Mittagessen 2h", important = true, timePredicted = 0, project=Project.META))
-                initialTodos.add(Todo(text="Insgesamt 6h", important = true, timePredicted = 0, project=Project.META))
-                initialTodos.add(Todo(text="Eine Einheit Sport", important = true, timePredicted = 0, project=Project.META))
-            }
 
             // Persist a new (possibly empty) today file so we don't re-import later
             writeState("$today.json", json.encodeToString(ListSerializer(Todo.serializer()), initialTodos))
@@ -153,7 +165,13 @@ class PlainJsonTodoRepository(
             loadTracking(today)
         }
 
-        _today.value = todayList
+        val routineName = "$today.routines.json"
+        _routineProgress.value = if (stateExists(routineName)) runCatching {
+            json.decodeFromString<RoutineProgress>(readState(routineName) ?: "{}")
+        }.getOrDefault(RoutineProgress()) else RoutineProgress()
+
+        // META was a legacy pseudo-project; routines supersede those injected rows.
+        _today.value = todayList.filterNot { it.project == Project.META }
         loadedDayKey = today
     }
 
@@ -234,6 +252,21 @@ class PlainJsonTodoRepository(
         }
     }
 
+    override suspend fun changeRoutine(id: String, delta: Int) = withContext(io) {
+        ensureLoadedForToday()
+        val routine = _config.value?.routines?.firstOrNull { it.id == id } ?: return@withContext
+        val old = _routineProgress.value.values[id] ?: 0
+        val next = (old + delta).coerceIn(0, routine.target)
+        _routineProgress.value = _routineProgress.value.copy(values = _routineProgress.value.values + (id to next))
+        writeState("${todayKey()}.routines.json", json.encodeToString(RoutineProgress.serializer(), _routineProgress.value))
+    }
+
+    override suspend fun setRoutinesCollapsed(collapsed: Boolean) = withContext(io) {
+        ensureLoadedForToday()
+        _routineProgress.value = _routineProgress.value.copy(collapsed = collapsed)
+        writeState("${todayKey()}.routines.json", json.encodeToString(RoutineProgress.serializer(), _routineProgress.value))
+    }
+
     // data/PlainJsonTodoRepository.kt  (add these impls)
     override suspend fun getRecentDays(limit: Int): List<String> = withContext(io) {
         // list files like 2025-09-18.json → sort desc → take up to limit
@@ -291,7 +324,9 @@ class PlainJsonTodoRepository(
                         .getOrElse { DayTracking() }
                 } else DayTracking()
 
-                if (previousState.current == Project.FREE_DAY) {
+                if (dayDate.dayOfWeek == DayOfWeek.SATURDAY || dayDate.dayOfWeek == DayOfWeek.SUNDAY) {
+                    DayTracking(current = Project.FREE_DAY, startedAt = null, totals = emptyMap())
+                } else if (previousState.current == Project.FREE_DAY) {
                     DayTracking(current = Project.FREE_DAY, startedAt = null, totals = emptyMap())
                 } else {
                     DayTracking()

@@ -67,7 +67,9 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import java.time.LocalTime
+import com.example.mydayplanner.config.Routine
+import com.example.mydayplanner.config.RoutineMeasure
+import com.example.mydayplanner.config.RuleEffect
 import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.config.TaskDifficulty
 import com.example.mydayplanner.config.TaskDifficultyDef
@@ -132,7 +134,7 @@ fun HomeScreen(
             if (!freeDayMode) {
                 DifficultyMixBar(ui.todos)
             }
-            RiskWarnings(todos = ui.todos, tracking = ui.tracking)
+            RuleNotices(ui.ruleNotices)
             if (ui.storageMessage != null || ui.sharedFolderUri == null) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(ui.storageMessage ?: "Shared folder not configured", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -145,7 +147,31 @@ fun HomeScreen(
                     .padding(16.dp)
                     .fillMaxSize()
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item {
+                        Column(modifier = Modifier.fillMaxWidth().clickable { viewModel.setRoutinesCollapsed(!ui.routineProgress.collapsed) }.padding(vertical = 6.dp)) {
+                            Text(if (ui.routineProgress.collapsed) "Routines ▸" else "Routines ▾", style = MaterialTheme.typography.titleLarge)
+                            if (ui.routineProgress.collapsed) {
+                                val summary = ui.config?.routines?.groupBy { it.area }?.map { (area, routines) ->
+                                    val percent = routines.sumOf { r -> (((ui.routineProgress.values[r.id] ?: 0) * 100) / r.target).coerceAtMost(100) } / routines.size
+                                    "$area $percent%"
+                                }.orEmpty()
+                                if (summary.isNotEmpty()) Text(summary.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    if (!ui.routineProgress.collapsed) {
+                        val daytype = if (freeDayMode) "free" else "work"
+                        ui.config?.routines?.filter { it.daytypes.isEmpty() || daytype in it.daytypes }?.forEach { routine ->
+                            item(key = "routine-${routine.id}") {
+                                RoutineRow(routine, ui.routineProgress.values[routine.id] ?: 0,
+                                    onIncrement = { viewModel.changeRoutine(routine.id, when (routine.measure) { RoutineMeasure.MINUTES -> 30; RoutineMeasure.COUNT -> 1; RoutineMeasure.BOOLEAN -> if ((ui.routineProgress.values[routine.id] ?: 0) > 0) -1 else 1 }) },
+                                    onDecrement = { viewModel.changeRoutine(routine.id, if (routine.measure == RoutineMeasure.MINUTES) -30 else -1) })
+                            }
+                        }
+                    }
+                    item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); Text("Tasks", style = MaterialTheme.typography.titleLarge) }
+                    item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
                         if (input.trim().isNotEmpty()) {
                             editorDraft = TodoEditorDraft(
@@ -180,11 +206,12 @@ fun HomeScreen(
                             }
                         })
                     )
-                }
-
-                Spacer(Modifier.height(16.dp))
-
-                if (ui.isLoading) {
+                } }
+                item { Spacer(Modifier.height(8.dp)) }
+                if (ui.configError != null) {
+                    item { Text(ui.configError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
+                } else if (ui.isLoading) {
+                    item {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -194,11 +221,15 @@ fun HomeScreen(
                         Spacer(Modifier.width(12.dp))
                         Text("Loading tasks…", style = MaterialTheme.typography.bodyMedium)
                     }
+                    }
                 } else if (ui.todos.isEmpty()) {
-                    Text("No tasks yet. Add your first one!", style = MaterialTheme.typography.bodyMedium)
+                    item { Text("No tasks yet. Add your first one!", style = MaterialTheme.typography.bodyMedium) }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(ui.todos, key = { it.id }) { todo ->
+                    val today = java.time.LocalDate.now()
+                    val groups = listOf("Active" to ui.todos.filter { !it.done && !it.isDeferred(today) }, "Done" to ui.todos.filter { it.done }, "Pushed" to ui.todos.filter { !it.done && it.isDeferred(today) })
+                    groups.forEach { (title, entries) ->
+                        if (entries.isNotEmpty()) item { Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp)) }
+                        items(entries, key = { it.id }) { todo ->
                             TodoRow(
                                 todo = todo,
                                 onToggle = { viewModel.toggle(todo.id) },
@@ -216,6 +247,7 @@ fun HomeScreen(
                             )
                         }
                     }
+                }
                 }
             }
         }
@@ -306,49 +338,10 @@ private fun DifficultyMixBar(todos: List<Todo>) {
 }
 
 @Composable
-private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
-    if (tracking.isFreeDayMode()) return
-
-    val dayPlanTodos = todos.filter { !it.isDeferred(java.time.LocalDate.now()) && it.project != Project.META }
-    if (dayPlanTodos.isEmpty()) return
-
-    val remainingTodos = dayPlanTodos.filter { !it.done }
-
-    val drainingTediousDayMinutes = dayPlanTodos
-        .filter { it.difficulty == TaskDifficulty.TediousDraining }
-        .sumOf { it.estimateMinutes }
-    val drainingTediousRemainingMinutes = remainingTodos
-        .filter { it.difficulty == TaskDifficulty.TediousDraining }
-        .sumOf { it.estimateMinutes }
-
-    val tediousDayMinutes = dayPlanTodos
-        .filter { it.difficulty == TaskDifficulty.TediousNormal || it.difficulty == TaskDifficulty.TediousDraining }
-        .sumOf { it.estimateMinutes }
-
-    val plannedWithoutOtherMinutes = dayPlanTodos
-        .filter { it.project != Project.Other }
-        .sumOf { it.estimateMinutes }
-    val plannedWithOtherMinutes = dayPlanTodos.sumOf { it.estimateMinutes }
-
-    val now = LocalTime.now()
-    val minutesUntilNoon = if (now.isBefore(LocalTime.NOON)) {
-        (LocalTime.NOON.toSecondOfDay() - now.toSecondOfDay()) / 60
-    } else {
-        0
-    }
-
-    val warnings = buildList {
-        if (drainingTediousDayMinutes > 120) add("Heavy drain load")
-        if (drainingTediousRemainingMinutes > minutesUntilNoon) add("Tough stuff before noon")
-        if (tediousDayMinutes == 0) add("Too comfort-heavy")
-        if (plannedWithoutOtherMinutes < 270) add("Plan too light")
-        if (plannedWithoutOtherMinutes > 360 || plannedWithOtherMinutes > 480) add("Plan too heavy")
-    }
-
-    if (warnings.isEmpty()) return
-
+private fun RuleNotices(notices: List<RuleNotice>) {
+    if (notices.isEmpty()) return
     Text(
-        text = warnings.joinToString(separator = " | "),
+        text = notices.joinToString(" | ") { n -> (if (n.effect == RuleEffect.REPLAN) "↻ " else if (n.effect == RuleEffect.WARNING) "⚠ " else "ℹ ") + n.message },
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
@@ -356,6 +349,19 @@ private fun RiskWarnings(todos: List<Todo>, tracking: DayTracking) {
         color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
     )
     Spacer(Modifier.height(8.dp))
+}
+
+@Composable private fun RoutineRow(routine: Routine, value: Int, onIncrement: () -> Unit, onDecrement: () -> Unit) {
+    val complete = value >= routine.target
+    Surface(color = if (complete) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onIncrement)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (routine.measure == RoutineMeasure.BOOLEAN) Checkbox(complete, onCheckedChange = { onIncrement() })
+            Text(routine.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Text(when(routine.measure) { RoutineMeasure.BOOLEAN -> if(complete) "Done" else "Not done"; RoutineMeasure.COUNT -> "$value/${routine.target}"; RoutineMeasure.MINUTES -> "$value/${routine.target} min" })
+            if (routine.measure != RoutineMeasure.BOOLEAN) TextButton(onClick = onDecrement, enabled = value > 0) { Text("−") }
+        }
+    }
 }
 
 private fun DayTracking.isFreeDayMode(): Boolean = current == Project.FREE_DAY
@@ -598,7 +604,7 @@ private fun TodoEditorDialog(
                         ExposedDropdownMenu(expanded = projExpanded, onDismissRequest = { projExpanded = false }) {
                             activeTracks.forEach { track ->
                                 DropdownMenuItem(
-                                    text = { Text(track.id) },
+                                    text = { Text(track.name) },
                                     onClick = { projExpanded = false; project = Project.Other; liveTrackId = track.id }
                                 )
                             }

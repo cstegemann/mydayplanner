@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.data.models.LiveTrack
 import kotlinx.coroutines.flow.StateFlow
+import com.example.mydayplanner.config.TodoConfig
+import com.example.mydayplanner.data.models.RoutineProgress
 
 interface TodoRepository {
     val todayTodos: Flow<List<Todo>>
@@ -32,6 +34,11 @@ interface TodoRepository {
     val liveTracks: StateFlow<List<LiveTrack>>
     val storageMessage: StateFlow<String?>
     val sharedFolderUri: String?
+    val config: StateFlow<TodoConfig?>
+    val configError: StateFlow<String?>
+    val routineProgress: StateFlow<RoutineProgress>
+    suspend fun changeRoutine(id: String, delta: Int)
+    suspend fun setRoutinesCollapsed(collapsed: Boolean)
     suspend fun configureSharedFolder(uri: android.net.Uri)
     suspend fun refreshSharedData()
 }
