@@ -165,6 +165,7 @@ fun HomeScreen(
                         ui.config?.routines?.filter { it.daytypes.isEmpty() || daytype in it.daytypes }?.forEach { routine ->
                             item(key = "routine-${routine.id}") {
                                 RoutineRow(routine, ui.routineProgress.values[routine.id] ?: 0,
+                                    areaIcon = ui.config?.areas?.firstOrNull { it.id == routine.area }?.icon,
                                     onIncrement = { viewModel.changeRoutine(routine.id, when (routine.measure) { RoutineMeasure.MINUTES -> 30; RoutineMeasure.COUNT -> 1; RoutineMeasure.BOOLEAN -> if ((ui.routineProgress.values[routine.id] ?: 0) > 0) -1 else 1 }) },
                                     onDecrement = { viewModel.changeRoutine(routine.id, if (routine.measure == RoutineMeasure.MINUTES) -30 else -1) })
                             }
@@ -232,6 +233,7 @@ fun HomeScreen(
                         items(entries, key = { it.id }) { todo ->
                             TodoRow(
                                 todo = todo,
+                                projectIcon = ui.config?.projects?.firstOrNull { it.id == todo.liveTrackId }?.icon,
                                 onToggle = { viewModel.toggle(todo.id) },
                                 onOpenEditor = {
                                     editorDraft = TodoEditorDraft(
@@ -351,14 +353,20 @@ private fun RuleNotices(notices: List<RuleNotice>) {
     Spacer(Modifier.height(8.dp))
 }
 
-@Composable private fun RoutineRow(routine: Routine, value: Int, onIncrement: () -> Unit, onDecrement: () -> Unit) {
+@Composable private fun RoutineRow(routine: Routine, value: Int, areaIcon: String?, onIncrement: () -> Unit, onDecrement: () -> Unit) {
     val complete = value >= routine.target
-    Surface(color = if (complete) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium,
+    Surface(color = if (complete) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onIncrement)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (areaIcon != null) {
+                Text(areaIcon)
+                Spacer(Modifier.width(8.dp))
+            }
             if (routine.measure == RoutineMeasure.BOOLEAN) Checkbox(complete, onCheckedChange = { onIncrement() })
             Text(routine.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-            Text(when(routine.measure) { RoutineMeasure.BOOLEAN -> if(complete) "Done" else "Not done"; RoutineMeasure.COUNT -> "$value/${routine.target}"; RoutineMeasure.MINUTES -> "$value/${routine.target} min" })
+            if (routine.measure != RoutineMeasure.BOOLEAN) {
+                Text(when(routine.measure) { RoutineMeasure.COUNT -> "$value/${routine.target}"; RoutineMeasure.MINUTES -> "$value/${routine.target} min"; RoutineMeasure.BOOLEAN -> "" })
+            }
             if (routine.measure != RoutineMeasure.BOOLEAN) TextButton(onClick = onDecrement, enabled = value > 0) { Text("−") }
         }
     }
@@ -423,6 +431,7 @@ fun MultiUseTopBar(
 @Composable
 private fun TodoRow(
     todo: Todo,
+    projectIcon: String?,
     onToggle: () -> Unit,
     onOpenEditor: () -> Unit
 ) {
@@ -465,6 +474,8 @@ private fun TodoRow(
                                 tint = MaterialTheme.colorScheme.tertiary
                             )
                         }
+
+                        if (projectIcon != null) Text(projectIcon)
 
                         Text(
                             text = todo.text,

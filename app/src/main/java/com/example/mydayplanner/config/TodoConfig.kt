@@ -5,8 +5,9 @@ import org.yaml.snakeyaml.Yaml
 import org.yaml.snakeyaml.constructor.SafeConstructor
 import java.time.LocalTime
 
-data class Area(val id: String, val name: String = id)
-data class ConfigProject(val id: String, val name: String, val area: String, val tags: List<String>, val active: Boolean)
+data class Area(val id: String, val name: String = id, val icon: String? = null)
+data class ConfigProject(val id: String, val name: String, val area: String, val tags: List<String>, val active: Boolean,
+    val icon: String? = null)
 enum class RoutineMeasure { BOOLEAN, COUNT, MINUTES }
 data class Routine(val id: String, val name: String, val area: String, val measure: RoutineMeasure, val target: Int,
     val daytypes: List<String>, val window: Pair<LocalTime, LocalTime>? = null)
@@ -31,7 +32,7 @@ object TodoConfigParser {
         val areas = (areasValue as? List<*>)?.map { value ->
             if (value is Map<*, *>) {
                 @Suppress("UNCHECKED_CAST") val item = value as Map<String, Any?>
-                Area(reqString(item, "id"), item["name"]?.toString() ?: reqString(item, "id"))
+                Area(reqString(item, "id"), item["name"]?.toString() ?: reqString(item, "id"), optionalString(item, "icon"))
             } else Area(value.toString())
         } ?: emptyList()
         require(areas.isNotEmpty()) { "Areas must contain at least one area" }
@@ -58,7 +59,9 @@ object TodoConfigParser {
         val loaded = Yaml(SafeConstructor(LoaderOptions())).load<Any?>(yaml) ?: emptyMap<String, Any?>()
         return loaded as? Map<String, Any?> ?: error("## $heading YAML must be a mapping")
     }
-    private fun projectList(m: Map<String,Any?>, active: Boolean) = list(m, if(active) "projects" else "projects").map { ConfigProject(reqString(it,"id"),reqString(it,"name"),reqString(it,"area"),strings(it["tags"]),active) }
+    private fun projectList(m: Map<String,Any?>, active: Boolean) = list(m, "projects").map {
+        ConfigProject(reqString(it,"id"),reqString(it,"name"),reqString(it,"area"),strings(it["tags"]),active,optionalString(it,"icon"))
+    }
     private fun parseRules(m: Map<String,Any?>): List<Rule> = list(m,"rules").map { x ->
         val id=reqString(x,"id"); val daytypes=daytypes(x); val effect=runCatching { RuleEffect.valueOf(reqString(x,"effect").uppercase()) }.getOrElse { error("Rule '$id' has invalid effect") }; val msg=x["message"]?.toString()
         when { x.containsKey("metric") -> { val metric=reqString(x,"metric"); require(metric in setOf("todos.count","todos.planned_minutes","todos.progress","routines.completions","routines.progress")){"Rule '$id' has invalid metric"}; val min=(x["min"] as? Number)?.toDouble(); val max=(x["max"] as? Number)?.toDouble(); require(min!=null||max!=null){"Rule '$id' needs min or max"}; MetricRule(id,metric,strings(x["areas"]),strings(x["loads"]),min,max,x["at"]?.toString()?.let(LocalTime::parse),daytypes,effect,msg) }
@@ -75,5 +78,6 @@ object TodoConfigParser {
         }
     }
     private fun reqString(m:Map<String,Any?>,k:String)=m[k]?.toString()?.takeIf{it.isNotBlank()}?.also { if(k=="id") require(ids.matches(it)){"Invalid id '$it'"} } ?: error("Missing $k")
+    private fun optionalString(m:Map<String,Any?>,k:String)=m[k]?.toString()?.takeIf { it.isNotBlank() }
     private fun number(m:Map<String,Any?>,k:String)=(m[k] as? Number) ?: error("Missing numeric $k")
 }
