@@ -14,6 +14,9 @@ import com.example.mydayplanner.data.models.DayTracking
 import com.example.mydayplanner.data.models.Todo
 import kotlinx.coroutines.flow.combine
 import com.example.mydayplanner.data.models.LiveTrack
+import com.example.mydayplanner.config.TodoConfig
+import com.example.mydayplanner.config.RuleEffect
+import com.example.mydayplanner.data.models.RoutineProgress
 
 data class HomeUiState(
     val isLoading: Boolean = true,
@@ -26,8 +29,14 @@ data class HomeUiState(
     val totals: Map<Project, Long> = emptyMap(),
     val liveTracks: List<LiveTrack> = emptyList(),
     val storageMessage: String? = null,
-    val sharedFolderUri: String? = null
+    val sharedFolderUri: String? = null,
+    val config: TodoConfig? = null,
+    val configError: String? = null,
+    val routineProgress: RoutineProgress = RoutineProgress(),
+    val ruleNotices: List<RuleNotice> = emptyList()
 )
+
+data class RuleNotice(val id: String, val effect: RuleEffect, val message: String)
 
 class HomeViewModel(
     private val repo: TodoRepository
@@ -42,15 +51,11 @@ class HomeViewModel(
             }
         }
     }
-    val uiState: StateFlow<HomeUiState> =
-        combine(repo.todayTodos, repo.tracking, repo.liveTracks, repo.storageMessage, loading) { todos, tracking, tracks, message, isLoading ->
+    private val base = combine(repo.todayTodos, repo.tracking, repo.liveTracks, repo.storageMessage, loading) { todos, tracking, tracks, message, isLoading ->
                 val today = java.time.LocalDate.now()
                 val sorted = todos.sortedWith(
                     compareBy<Todo> { it.isDeferred(today) }
                         .thenBy { it.done }
-                        .thenByDescending {
-                            if (it.project == Project.META) 0 else 1
-                        }
                         .thenByDescending {
                             if (it.project == Project.Other) 0 else 1
                         }
@@ -64,7 +69,11 @@ class HomeViewModel(
                     storageMessage = message,
                     sharedFolderUri = repo.sharedFolderUri
                 )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+        }
+    val uiState: StateFlow<HomeUiState> = combine(base, repo.config, repo.configError, repo.routineProgress) { state, config, error, progress ->
+        state.copy(config=config, configError=error, routineProgress=progress,
+            ruleNotices=config?.let { evaluateRules(it, state.todos, progress, state.tracking.isFreeDay()) }.orEmpty())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
 
     fun onInputChange(value: String) {
         _input = value
@@ -120,7 +129,11 @@ class HomeViewModel(
     }
     fun configureSharedFolder(uri: android.net.Uri) = viewModelScope.launch { repo.configureSharedFolder(uri) }
     fun refreshSharedData() = viewModelScope.launch { repo.refreshSharedData() }
+    fun changeRoutine(id: String, delta: Int) = viewModelScope.launch { repo.changeRoutine(id, delta) }
+    fun setRoutinesCollapsed(value: Boolean) = viewModelScope.launch { repo.setRoutinesCollapsed(value) }
 }
+
+private fun DayTracking.isFreeDay() = current == Project.FREE_DAY
 
 internal data class TodoPart(
     val text: String,

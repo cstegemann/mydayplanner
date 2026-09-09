@@ -1,6 +1,12 @@
 package com.example.mydayplanner.data.models
 
-data class LiveTrack(val id: String, val active: Boolean, val modes: List<String>)
+data class LiveTrack(
+    val id: String,
+    val active: Boolean,
+    val modes: List<String>,
+    val name: String = id,
+    val area: String = ""
+)
 data class LiveTrackParseResult(val tracks: List<LiveTrack>, val warnings: List<String>)
 
 object LiveTrackParser {

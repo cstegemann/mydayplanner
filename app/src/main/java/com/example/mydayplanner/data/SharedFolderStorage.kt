@@ -30,7 +30,7 @@ internal class SharedFolderStorage(private val context: Context) {
             ?.takeIf { it.exists() && it.canRead() && it.canWrite() }
     }
 
-    fun readConfig(): String? = root()?.findFile("_live-tracks.md")?.let { file ->
+    fun readConfig(): String? = root()?.findFile("todo_config.md")?.let { file ->
         runCatching { context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
     }
 
