@@ -256,7 +256,7 @@ fun HomeScreen(
                 }
                 }
             }
-        }
+        } }
     }
 
     editorDraft?.let { draft ->
