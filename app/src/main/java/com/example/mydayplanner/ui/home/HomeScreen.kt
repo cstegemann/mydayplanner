@@ -116,14 +116,16 @@ fun HomeScreen(
     Scaffold(
         containerColor = if (freeDayMode) freeDayBackground else MaterialTheme.colorScheme.background,
         topBar = {
-            MultiUseTopBar(
-                todos = ui.todos,
-                onOpenHistory = onOpenHistory,
-                tracking = ui.tracking,
-                viewModel = viewModel,
-                freeDayMode = freeDayMode,
-                freeDayBackground = freeDayBackground
-            )
+            if (!ui.isLoading) {
+                MultiUseTopBar(
+                    todos = ui.todos,
+                    onOpenHistory = onOpenHistory,
+                    tracking = ui.tracking,
+                    viewModel = viewModel,
+                    freeDayMode = freeDayMode,
+                    freeDayBackground = freeDayBackground
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -131,29 +133,43 @@ fun HomeScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            if (!freeDayMode) {
-                DifficultyMixBar(ui.todos)
-            }
-            RuleNotices(ui.ruleNotices)
-            if (ui.storageMessage != null || ui.sharedFolderUri == null) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(ui.storageMessage ?: "Shared folder not configured", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { folderPicker.launch(null) }) { Text(if (ui.sharedFolderUri == null) "Choose folder" else "Reconnect") }
-                    if (ui.sharedFolderUri != null) TextButton(onClick = viewModel::refreshSharedData) { Text("Refresh") }
+            if (ui.isLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Loading planner…", style = MaterialTheme.typography.bodyMedium)
                 }
-            }
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxSize()
-            ) {
+            } else {
+                if (!freeDayMode) {
+                    DifficultyMixBar(ui.todos)
+                }
+                RuleNotices(ui.ruleNotices)
+                if (ui.storageMessage != null || ui.sharedFolderUri == null) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(ui.storageMessage ?: "Shared folder not configured", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { folderPicker.launch(null) }) { Text(if (ui.sharedFolderUri == null) "Choose folder" else "Reconnect") }
+                        if (ui.sharedFolderUri != null) TextButton(onClick = viewModel::refreshSharedData) { Text("Refresh") }
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .fillMaxSize()
+                ) {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
                         Column(modifier = Modifier.fillMaxWidth().clickable { viewModel.setRoutinesCollapsed(!ui.routineProgress.collapsed) }.padding(vertical = 6.dp)) {
                             Text(if (ui.routineProgress.collapsed) "Routines ▸" else "Routines ▾", style = MaterialTheme.typography.titleLarge)
                             if (ui.routineProgress.collapsed) {
-                                val summary = ui.config?.routines?.groupBy { it.area }?.map { (area, routines) ->
-                                    val percent = routines.sumOf { r -> (((ui.routineProgress.values[r.id] ?: 0) * 100) / r.target).coerceAtMost(100) } / routines.size
+                                val daytype = if (freeDayMode) "free" else "work"
+                                val summary = ui.config?.routines
+                                    ?.filter { it.daytypes.isEmpty() || daytype in it.daytypes }
+                                    ?.groupBy { it.area }?.map { (area, routines) ->
+                                    val percent = routineProgressPercent(routines, ui.routineProgress)
                                     "$area $percent%"
                                 }.orEmpty()
                                 if (summary.isNotEmpty()) Text(summary.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
@@ -211,18 +227,6 @@ fun HomeScreen(
                 item { Spacer(Modifier.height(8.dp)) }
                 if (ui.configError != null) {
                     item { Text(ui.configError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyLarge) }
-                } else if (ui.isLoading) {
-                    item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Text("Loading tasks…", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    }
                 } else if (ui.todos.isEmpty()) {
                     item { Text("No tasks yet. Add your first one!", style = MaterialTheme.typography.bodyMedium) }
                 } else {
