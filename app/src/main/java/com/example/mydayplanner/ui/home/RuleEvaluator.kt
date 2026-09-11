@@ -32,7 +32,7 @@ internal fun evaluateRules(config: TodoConfig, todos: List<Todo>, progress: Rout
                         "todos.planned_minutes" -> matchingTodos.sumOf { it.estimateMinutes }.toDouble()
                         "todos.progress" -> matchingTodos.let { ts -> if (ts.isEmpty()) 0.0 else ts.count { it.done } * 100.0 / ts.size }
                         "routines.completions" -> matchingRoutines.count { (progress.values[it.id] ?: 0) > 0 }.toDouble()
-                        else -> matchingRoutines.let { rs -> if (rs.isEmpty()) 0.0 else rs.sumOf { ((progress.values[it.id] ?: 0) * 100.0 / it.target).coerceAtMost(100.0) } / rs.size }
+                        else -> routineProgressPercent(matchingRoutines, progress).toDouble()
                     }
                     (rule.min != null && value < rule.min) || (rule.max != null && value > rule.max)
                 }

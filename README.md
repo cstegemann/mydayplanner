@@ -67,3 +67,25 @@ Some Android document providers add suffixes such as ` (1)` or append a second `
 - This repo is used as an AI-coding playground, so you may find pragmatic or experimental patterns.
 - Keep changes small and explicit where possible.
 - Prefer preserving existing JSON compatibility when touching models.
+
+## Garmin watch snapshot
+
+`buildWatchSnapshot` now reduces the planner state and placeholder weather into the
+small, integer-only payload expected by the watch face. It includes learning,
+physical, and time-weighted task progress; remaining scheduled minutes; capped
+warning/replan counts; fixed test weather; and a Unix timestamp. Deferred and meta
+tasks are not considered scheduled work. Learning and physical routine progress use
+the `learning` and `physical` area IDs from the planner configuration.
+
+The Connect IQ transport is intentionally not wired in yet. Completing it requires:
+
+1. The watch face's Connect IQ application UUID (this is not the Android package ID).
+2. Garmin's Android Connect IQ Mobile SDK artifact/AAR added to the local build.
+3. A transport initialized with that UUID which sends the serialized snapshot with
+   `sendMessage` after planner-state changes, app resume, and reconnect.
+4. Matching Monkey C handling in the watch face, including acknowledgement/error
+   handling and testing through Garmin Connect Mobile on the paired FR55.
+
+Keeping snapshot construction independent of the proprietary transport makes the
+payload testable now and leaves DWD weather as a drop-in replacement for
+`ReducedWeather.Fake` later.
