@@ -77,14 +77,11 @@ warning/replan counts; fixed test weather; and a Unix timestamp. Deferred and me
 tasks are not considered scheduled work. Learning and physical routine progress use
 the `learning` and `physical` area IDs from the planner configuration.
 
-The Connect IQ transport is intentionally not wired in yet. Completing it requires:
-
-1. The watch face's Connect IQ application UUID (this is not the Android package ID).
-2. Garmin's Android Connect IQ Mobile SDK artifact/AAR added to the local build.
-3. A transport initialized with that UUID which sends the serialized snapshot with
-   `sendMessage` after planner-state changes, app resume, and reconnect.
-4. Matching Monkey C handling in the watch face, including acknowledgement/error
-   handling and testing through Garmin Connect Mobile on the paired FR55.
+The Android app uses Garmin's Connect IQ Mobile SDK and watch-face UUID
+`36629bca-a6fa-4be8-a2b2-4a8a870c7415`. It sends the serialized snapshot after
+planner-state changes, app resume, and device reconnect. The watch face must have
+matching Monkey C app-message handling and must be installed through Garmin Connect
+Mobile on the paired device.
 
 Keeping snapshot construction independent of the proprietary transport makes the
 payload testable now and leaves DWD weather as a drop-in replacement for
