@@ -66,4 +66,5 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.documentfile)
     implementation(libs.snakeyaml)
+    implementation(libs.garmin.connect.iq)
 }

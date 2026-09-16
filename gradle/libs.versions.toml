@@ -13,6 +13,7 @@ lifecycleViewmodelCompose = "2.9.2"
 foundationLayoutAndroid = "1.7.0"
 documentFile = "1.0.1"
 snakeYaml = "2.3"
+garminConnectIq = "2.2.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,6 +35,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 androidx-compose-foundation-layout-android = { group = "androidx.compose.foundation", name = "foundation-layout-android", version.ref = "foundationLayoutAndroid" }
 androidx-documentfile = { module = "androidx.documentfile:documentfile", version.ref = "documentFile" }
 snakeyaml = { module = "org.yaml:snakeyaml", name = "snakeyaml", version.ref = "snakeYaml" }
+garmin-connect-iq = { module = "com.garmin.connectiq:ciq-companion-app-sdk", version.ref = "garminConnectIq" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

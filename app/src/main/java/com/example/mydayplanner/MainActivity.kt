@@ -11,8 +11,14 @@ import androidx.compose.runtime.setValue
 import com.example.mydayplanner.ui.history.HistoryScreen
 import com.example.mydayplanner.ui.home.HomeScreen
 import com.example.mydayplanner.ui.theme.MydayplannerTheme
+import com.example.mydayplanner.di.AppGraph
 
 class MainActivity : ComponentActivity() {
+    override fun onResume() {
+        super.onResume()
+        AppGraph.garminWatchSync.onAppResumed()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
