@@ -12,7 +12,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+data class SentWatchSnapshot(
+    val sentAtMillis: Long,
+    val deviceName: String,
+    val payload: Map<String, Any>
+)
 
 /** Sends the latest planner snapshot to every connected Garmin device with the watch face installed. */
 class GarminWatchSync(
@@ -23,6 +33,8 @@ class GarminWatchSync(
     private val connectIq = ConnectIQ.getInstance(appContext, ConnectIQ.IQConnectType.WIRELESS)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val registeredDevices = mutableSetOf<Long>()
+    private val _sentSnapshots = MutableStateFlow<List<SentWatchSnapshot>>(emptyList())
+    val sentSnapshots: StateFlow<List<SentWatchSnapshot>> = _sentSnapshots.asStateFlow()
 
     @Volatile
     private var sdkReady = false
@@ -67,6 +79,11 @@ class GarminWatchSync(
         if (sdkReady) registerDevicesAndSend()
     }
 
+    /** Immediately retries the current snapshot on all connected devices. */
+    fun sendSnapshot() {
+        if (sdkReady) registerDevicesAndSend()
+    }
+
     private fun registerDevicesAndSend() {
         connectIq.knownDevices.orEmpty().forEach { device ->
             val shouldRegister = synchronized(registeredDevices) {
@@ -94,6 +111,10 @@ class GarminWatchSync(
             object : ConnectIQ.IQApplicationInfoListener {
                 override fun onApplicationInfoReceived(app: IQApp) {
                     val payload = latestPayload ?: return
+                    _sentSnapshots.update { snapshots ->
+                        listOf(SentWatchSnapshot(System.currentTimeMillis(), device.friendlyName, payload.toMap())) +
+                            snapshots.take(MAX_CACHED_SNAPSHOTS - 1)
+                    }
                     connectIq.sendMessage(device, app, payload) { _, _, status ->
                         if (status != ConnectIQ.IQMessageStatus.SUCCESS) {
                             Log.w(TAG, "Watch snapshot send failed for ${device.friendlyName}: $status")
@@ -111,5 +132,6 @@ class GarminWatchSync(
     private companion object {
         const val TAG = "GarminWatchSync"
         const val WATCH_FACE_UUID = "36629bca-a6fa-4be8-a2b2-4a8a870c7415"
+        const val MAX_CACHED_SNAPSHOTS = 100
     }
 }

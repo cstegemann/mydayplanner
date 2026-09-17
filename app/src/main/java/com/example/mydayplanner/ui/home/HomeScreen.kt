@@ -95,7 +95,7 @@ private data class TodoEditorDraft(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onOpenHistory: () -> Unit,
+    onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: HomeViewModel = viewModel(factory = homeVmFactory(AppGraph.todoRepo))
 ) {
@@ -119,7 +119,7 @@ fun HomeScreen(
             if (!ui.isLoading) {
                 MultiUseTopBar(
                     todos = ui.todos,
-                    onOpenHistory = onOpenHistory,
+                    onOpenMenu = onOpenMenu,
                     tracking = ui.tracking,
                     viewModel = viewModel,
                     freeDayMode = freeDayMode,
@@ -382,7 +382,7 @@ private fun DayTracking.isFreeDayMode(): Boolean = current == Project.FREE_DAY
 @Composable
 fun MultiUseTopBar(
     todos: List<Todo>,
-    onOpenHistory: () -> Unit,
+    onOpenMenu: () -> Unit,
     tracking: DayTracking,
     viewModel: HomeViewModel,
     freeDayMode: Boolean,
@@ -419,8 +419,8 @@ fun MultiUseTopBar(
             }
         },
         navigationIcon = {
-            IconButton(onClick = onOpenHistory) {
-                Icon(Icons.Filled.Menu, contentDescription = "History")
+            IconButton(onClick = onOpenMenu) {
+                Icon(Icons.Filled.Menu, contentDescription = "Open menu")
             }
         },
         actions = {

@@ -12,7 +12,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Menu
 import com.example.mydayplanner.data.TodoRepository
 import com.example.mydayplanner.di.AppGraph
 import com.example.mydayplanner.ui.formatDuration
@@ -21,7 +21,7 @@ import com.example.mydayplanner.ui.formatEstimate
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    onBack: () -> Unit,
+    onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
     vm: HistoryViewModel = viewModel(factory = historyVmFactory(AppGraph.todoRepo))
 ) {
@@ -35,10 +35,10 @@ fun HistoryScreen(
             CenterAlignedTopAppBar(
                 title = { Text("History (28 days)") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onOpenMenu) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
+                            imageVector = Icons.Filled.Menu,
+                            contentDescription = "Open menu"
                         )
                     }
                 }
