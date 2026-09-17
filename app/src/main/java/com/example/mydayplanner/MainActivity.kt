@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.material3.*
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.mydayplanner.ui.history.HistoryScreen
 import com.example.mydayplanner.ui.home.HomeScreen

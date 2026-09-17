@@ -27,6 +27,9 @@ class PlainJsonTodoRepository(
     private val io: CoroutineDispatcher = Dispatchers.IO
 ) : TodoRepository {
 
+    private val _isLoaded = MutableStateFlow(false)
+    override val isLoaded = _isLoaded.asStateFlow()
+
     private val context = appContext.applicationContext
 
     private val json = Json { prettyPrint = false; ignoreUnknownKeys = true }
@@ -115,9 +118,15 @@ class PlainJsonTodoRepository(
 
     suspend fun initializeIfNeeded() {
         if (!initialized) {
-            refreshSharedData()
-            if (_config.value != null) ensureLoadedForToday()
-            initialized = true
+            try {
+                refreshSharedData()
+                if (_config.value != null) ensureLoadedForToday()
+                initialized = true
+            } finally {
+                // Even an unavailable/misconfigured folder is a completed load. Its empty state
+                // is preferable to publishing the transient defaults emitted during startup.
+                _isLoaded.value = true
+            }
         }
     }
 

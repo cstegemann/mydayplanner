@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,7 @@ fun GarminScreen(
     watchSync: GarminWatchSync = AppGraph.garminWatchSync
 ) {
     val snapshots by watchSync.sentSnapshots.collectAsState()
+    val forcedSend by watchSync.lastForcedSend.collectAsState()
 
     Scaffold(
         topBar = {
@@ -57,13 +59,18 @@ fun GarminScreen(
             Button(onClick = watchSync::sendSnapshot, modifier = Modifier.fillMaxWidth()) {
                 Text("Send snapshot")
             }
-            if (snapshots.isEmpty()) {
-                Text(
-                    "No snapshots have been sent during this app session.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (snapshots.isEmpty()) {
+                    item {
+                        Text(
+                            "No snapshots have been sent during this app session.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
                     items(snapshots) { snapshot ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -76,6 +83,19 @@ fun GarminScreen(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
+                        }
+                    }
+                }
+            }
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Last forced send", style = MaterialTheme.typography.titleSmall)
+                    if (forcedSend == null) {
+                        Text("Not requested yet", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(formatSentAt(forcedSend!!.startedAtMillis), style = MaterialTheme.typography.labelMedium)
+                        forcedSend!!.entries.forEach { entry ->
+                            Text("• $entry", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
