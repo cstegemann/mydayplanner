@@ -79,6 +79,11 @@ fun GarminScreen(
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
+                                    "Sent from: ${snapshot.origin.label}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
                                     snapshot.payload.entries.joinToString(", ") { "${it.key}=${it.value}" },
                                     style = MaterialTheme.typography.bodySmall
                                 )

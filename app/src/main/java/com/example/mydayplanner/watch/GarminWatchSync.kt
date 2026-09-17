@@ -19,10 +19,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.ConcurrentHashMap
+
+enum class SnapshotSendOrigin(val label: String) {
+    INITIAL_LOAD("Initial data load"),
+    PLANNER_UPDATE("Planner data update"),
+    SDK_READY("Connect IQ initialized"),
+    APP_RESUME("App resumed"),
+    DEVICE_RECONNECTED("Device connected"),
+    FORCED("Manual send")
+}
 
 data class SentWatchSnapshot(
     val sentAtMillis: Long,
     val deviceName: String,
+    val origin: SnapshotSendOrigin,
     val payload: Map<String, Any>
 )
 
@@ -40,6 +51,7 @@ class GarminWatchSync(
     private val connectIq = ConnectIQ.getInstance(appContext, ConnectIQ.IQConnectType.WIRELESS)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val registeredDevices = mutableSetOf<Long>()
+    private val pendingForcedSends = ConcurrentHashMap<Long, Long>()
     private val forcedSendIds = AtomicLong()
     private val _sentSnapshots = MutableStateFlow<List<SentWatchSnapshot>>(emptyList())
     val sentSnapshots: StateFlow<List<SentWatchSnapshot>> = _sentSnapshots.asStateFlow()
@@ -51,6 +63,8 @@ class GarminWatchSync(
 
     @Volatile
     private var latestPayload: Map<String, Any>? = null
+
+    private var hasBuiltPayload = false
 
     init {
         scope.launch {
@@ -64,14 +78,16 @@ class GarminWatchSync(
                 buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
             }.filterNotNull().collect { payload ->
                 latestPayload = payload
-                sendLatest()
+                val origin = if (hasBuiltPayload) SnapshotSendOrigin.PLANNER_UPDATE else SnapshotSendOrigin.INITIAL_LOAD
+                hasBuiltPayload = true
+                sendLatest(origin)
             }
         }
 
         connectIq.initialize(appContext, true, object : ConnectIQ.ConnectIQListener {
             override fun onSdkReady() {
                 sdkReady = true
-                registerDevicesAndSend()
+                registerDevicesAndSend(SnapshotSendOrigin.SDK_READY)
             }
 
             override fun onInitializeError(errorStatus: ConnectIQ.IQSdkErrorStatus) {
@@ -87,7 +103,7 @@ class GarminWatchSync(
 
     /** Re-checks connections and sends current data, for example when the app returns to the foreground. */
     fun onAppResumed() {
-        if (sdkReady) registerDevicesAndSend()
+        if (sdkReady) registerDevicesAndSend(SnapshotSendOrigin.APP_RESUME)
     }
 
     /** Immediately retries the current snapshot on all connected devices. */
@@ -103,10 +119,10 @@ class GarminWatchSync(
             return
         }
         appendForcedLog(id, "Connect IQ SDK ready; checking known devices")
-        registerDevicesAndSend(id)
+        registerDevicesAndSend(SnapshotSendOrigin.FORCED, id)
     }
 
-    private fun registerDevicesAndSend(forcedSendId: Long? = null) {
+    private fun registerDevicesAndSend(origin: SnapshotSendOrigin, forcedSendId: Long? = null) {
         val devices = connectIq.knownDevices.orEmpty()
         forcedSendId?.let { appendForcedLog(it, "Found ${devices.size} known device(s)") }
         devices.forEach { device ->
@@ -115,26 +131,48 @@ class GarminWatchSync(
             }
             if (shouldRegister) {
                 connectIq.registerForDeviceEvents(device) { changedDevice, status ->
-                    if (status == IQDevice.IQDeviceStatus.CONNECTED) sendTo(changedDevice)
+                    val pendingForcedSend = pendingForcedSends[changedDevice.deviceIdentifier]
+                    pendingForcedSend?.let { appendForcedLog(it, "${changedDevice.friendlyName}: device event $status") }
+                    if (status == IQDevice.IQDeviceStatus.CONNECTED) {
+                        pendingForcedSends.remove(changedDevice.deviceIdentifier)
+                        sendTo(
+                            changedDevice,
+                            if (pendingForcedSend != null) SnapshotSendOrigin.FORCED else SnapshotSendOrigin.DEVICE_RECONNECTED,
+                            pendingForcedSend
+                        )
+                    }
                 }
             }
-            if (device.status == IQDevice.IQDeviceStatus.CONNECTED) {
+            val status = runCatching { connectIq.getDeviceStatus(device) }
+                .getOrElse { error ->
+                    forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: status lookup failed (${error.message})") }
+                    IQDevice.IQDeviceStatus.UNKNOWN
+                }
+            device.status = status
+            if (status == IQDevice.IQDeviceStatus.CONNECTED) {
                 forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: connected; requesting watch app info") }
-                sendTo(device, forcedSendId)
+                sendTo(device, origin, forcedSendId)
             } else {
-                forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: skipped (${device.status})") }
+                forcedSendId?.let {
+                    appendForcedLog(it, "${device.friendlyName}: current status $status; waiting for a device event")
+                    pendingForcedSends[device.deviceIdentifier] = it
+                }
             }
         }
     }
 
-    private fun sendLatest() {
+    private fun sendLatest(origin: SnapshotSendOrigin) {
         if (!sdkReady) return
         connectIq.knownDevices.orEmpty()
-            .filter { it.status == IQDevice.IQDeviceStatus.CONNECTED }
-            .forEach(::sendTo)
+            .filter { runCatching { connectIq.getDeviceStatus(it) }.getOrNull() == IQDevice.IQDeviceStatus.CONNECTED }
+            .forEach { sendTo(it, origin) }
     }
 
-    private fun sendTo(device: IQDevice, forcedSendId: Long? = null) {
+    private fun sendTo(
+        device: IQDevice,
+        origin: SnapshotSendOrigin,
+        forcedSendId: Long? = null
+    ) {
         if (latestPayload == null) return
         connectIq.getApplicationInfo(WATCH_FACE_UUID, device,
             object : ConnectIQ.IQApplicationInfoListener {
@@ -142,7 +180,7 @@ class GarminWatchSync(
                     val payload = latestPayload ?: return
                     forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: watch app found; sending payload") }
                     _sentSnapshots.update { snapshots ->
-                        listOf(SentWatchSnapshot(System.currentTimeMillis(), device.friendlyName, payload.toMap())) +
+                        listOf(SentWatchSnapshot(System.currentTimeMillis(), device.friendlyName, origin, payload.toMap())) +
                             snapshots.take(MAX_CACHED_SNAPSHOTS - 1)
                     }
                     connectIq.sendMessage(device, app, payload) { _, _, status ->
