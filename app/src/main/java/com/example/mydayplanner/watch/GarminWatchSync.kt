@@ -13,8 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 /** Sends the latest planner snapshot to every connected Garmin device with the watch face installed. */
 class GarminWatchSync(
@@ -30,7 +28,7 @@ class GarminWatchSync(
     private var sdkReady = false
 
     @Volatile
-    private var latestPayload: String? = null
+    private var latestPayload: Map<String, Any>? = null
 
     init {
         scope.launch {
@@ -40,9 +38,7 @@ class GarminWatchSync(
                 val notices = config?.let {
                     evaluateRules(it, todos, routineProgress, freeDay)
                 }.orEmpty()
-                Json.encodeToString(
-                    buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
-                )
+                buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
             }.collect { payload ->
                 latestPayload = payload
                 sendLatest()

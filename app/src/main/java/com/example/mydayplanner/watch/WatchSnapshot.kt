@@ -7,26 +7,7 @@ import com.example.mydayplanner.data.models.RoutineProgress
 import com.example.mydayplanner.data.models.Todo
 import com.example.mydayplanner.ui.home.RuleNotice
 import com.example.mydayplanner.ui.home.routineProgressPercent
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import java.time.LocalDate
-
-@Serializable
-data class WatchSnapshot(
-    @SerialName("v") val version: Int = 1,
-    @SerialName("l") val learningProgress: Int,
-    @SerialName("p") val physicalProgress: Int,
-    @SerialName("t") val taskProgress: Int,
-    @SerialName("rm") val remainingMinutes: Int,
-    @SerialName("w") val warningSeverity: Int,
-    @SerialName("rp") val replanSeverity: Int,
-    @SerialName("tc") val temperatureCelsius: Int,
-    @SerialName("td") val temperatureDelta: Int,
-    @SerialName("rn") val rainLevel: Int,
-    @SerialName("wi") val windLevel: Int,
-    @SerialName("th") val thunderState: Int,
-    @SerialName("ts") val timestamp: Long
-)
 
 data class ReducedWeather(
     val temperatureCelsius: Int,
@@ -37,7 +18,7 @@ data class ReducedWeather(
 ) {
     companion object {
         /** Placeholder until the DWD weather source is implemented. */
-        val Fake = ReducedWeather(20, 3, rainLevel = 3, windLevel = 3, thunderState = 1)
+        val Fake = ReducedWeather(20, 2, rainLevel = 1, windLevel = 2, thunderState = 0)
     }
 }
 
@@ -50,7 +31,7 @@ fun buildWatchSnapshot(
     freeDay: Boolean,
     weather: ReducedWeather = ReducedWeather.Fake,
     timestamp: Long = System.currentTimeMillis() / 1_000
-): WatchSnapshot {
+): Map<String, Any> {
     val daytype = if (freeDay) "free" else "work"
     val routines = config?.routines.orEmpty().filter { it.daytypes.isEmpty() || daytype in it.daytypes }
     fun progressFor(area: String): Int {
@@ -70,18 +51,19 @@ fun buildWatchSnapshot(
     val doneMinutes = scheduled.filter { it.done }.sumOf { it.estimateMinutes.coerceAtLeast(0) }
     val taskProgress = if (totalMinutes == 0) 0 else (doneMinutes * 100.0 / totalMinutes).toInt().coerceIn(0, 100)
 
-    return WatchSnapshot(
-        learningProgress = progressFor("learning"),
-        physicalProgress = progressFor("physical"),
-        taskProgress = taskProgress,
-        remainingMinutes = scheduled.filterNot { it.done }.sumOf { it.estimateMinutes.coerceAtLeast(0) },
-        warningSeverity = notices.count { it.effect == RuleEffect.WARNING }.coerceAtMost(3),
-        replanSeverity = notices.count { it.effect == RuleEffect.REPLAN }.coerceAtMost(3),
-        temperatureCelsius = weather.temperatureCelsius,
-        temperatureDelta = weather.temperatureDelta,
-        rainLevel = weather.rainLevel.coerceIn(0, 3),
-        windLevel = weather.windLevel.coerceIn(0, 3),
-        thunderState = weather.thunderState.coerceIn(0, 2),
-        timestamp = timestamp
+    return mapOf(
+        "v" to 1,
+        "l" to progressFor("learning"),
+        "p" to progressFor("physical"),
+        "t" to taskProgress,
+        "rm" to scheduled.filterNot { it.done }.sumOf { it.estimateMinutes.coerceAtLeast(0) },
+        "w" to notices.count { it.effect == RuleEffect.WARNING }.coerceAtMost(3),
+        "rp" to notices.count { it.effect == RuleEffect.REPLAN }.coerceAtMost(3),
+        "tc" to weather.temperatureCelsius,
+        "td" to weather.temperatureDelta,
+        "rn" to weather.rainLevel.coerceIn(0, 3),
+        "wi" to weather.windLevel.coerceIn(0, 3),
+        "th" to weather.thunderState.coerceIn(0, 2),
+        "ts" to timestamp
     )
 }

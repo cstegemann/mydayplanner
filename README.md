@@ -78,7 +78,7 @@ tasks are not considered scheduled work. Learning and physical routine progress 
 the `learning` and `physical` area IDs from the planner configuration.
 
 The Android app uses Garmin's Connect IQ Mobile SDK and watch-face UUID
-`36629bca-a6fa-4be8-a2b2-4a8a870c7415`. It sends the serialized snapshot after
+`36629bca-a6fa-4be8-a2b2-4a8a870c7415`. It sends the snapshot map directly after
 planner-state changes, app resume, and device reconnect. The watch face must have
 matching Monkey C app-message handling and must be installed through Garmin Connect
 Mobile on the paired device.
