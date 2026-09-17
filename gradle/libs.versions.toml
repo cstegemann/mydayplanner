@@ -11,9 +11,9 @@ activityCompose = "1.8.0"
 composeBom = "2024.09.00"
 lifecycleViewmodelCompose = "2.9.2"
 foundationLayoutAndroid = "1.7.0"
-documentFile = "1.0.1"
-snakeYaml = "2.3"
-garminConnectIq = "2.2.0"
+documentFile = "1.1.0"
+snakeYaml = "2.7"
+garminConnectIq = "2.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

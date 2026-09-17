@@ -11,6 +11,8 @@ import com.example.mydayplanner.config.TodoConfig
 import com.example.mydayplanner.data.models.RoutineProgress
 
 interface TodoRepository {
+    /** True after the repository's initial folder/JSON load has completed. */
+    val isLoaded: StateFlow<Boolean>
     val todayTodos: Flow<List<Todo>>
     suspend fun add(
         text: String,
