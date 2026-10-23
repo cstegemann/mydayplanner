@@ -41,7 +41,9 @@ class PlainJsonTodoRepository(
     private var loadedDayKey: String? = null
 
     private val dir: File = File(context.filesDir, "days").apply { mkdirs() }
-    private val shared = SharedFolderStorage(context)
+    private val shared = SharedFolderStorage(context) {
+        _storageMessage.value = "Shared folder unavailable"
+    }
 
     private val _liveTracks = MutableStateFlow<List<LiveTrack>>(emptyList())
     override val liveTracks = _liveTracks.asStateFlow()
@@ -56,32 +58,24 @@ class PlainJsonTodoRepository(
     override val routineProgress = _routineProgress.asStateFlow()
 
     private fun stateExists(name: String): Boolean =
-        when {
-            shared.root() != null -> name in shared.names()
-            shared.configuredUri == null -> File(dir, name).exists()
-            else -> false
-        }
+        if (shared.configuredUri != null) shared.contains(name) else File(dir, name).exists()
 
     private fun readState(name: String): String? =
-        when {
-            shared.root() != null -> shared.read(name)
-            shared.configuredUri == null -> File(dir, name).takeIf(File::exists)?.readText()
-            else -> null
-        }
+        if (shared.configuredUri != null) shared.read(name)
+        else File(dir, name).takeIf(File::exists)?.readText()
 
     private fun writeState(name: String, contents: String) {
-        if (shared.root() != null) {
-            if (!shared.write(name, contents)) _storageMessage.value = "Could not write shared folder"
-        } else if (shared.configuredUri == null) {
-            File(dir, name).writeText(contents)
+        if (shared.configuredUri != null) {
+            if (!shared.write(name, contents)) {
+                _storageMessage.value = "Shared folder unavailable; changes could not be saved"
+            }
         } else {
-            _storageMessage.value = "Shared folder unavailable; changes cannot be saved"
+            File(dir, name).writeText(contents)
         }
     }
 
     override suspend fun configureSharedFolder(uri: Uri) = withContext(io) {
         shared.configure(uri)
-        shared.copyMissingFrom(dir)
         loadedDayKey = null
         refreshSharedData()
         if (_config.value != null) ensureLoadedForToday()
@@ -91,6 +85,10 @@ class PlainJsonTodoRepository(
         val root = shared.root()
         if (root == null) {
             _storageMessage.value = if (shared.configuredUri == null) "Choose your Obsidian folder to enable sync" else "Shared folder unavailable"
+            return@withContext
+        }
+        if (!shared.refreshIndex()) {
+            _storageMessage.value = "Shared folder unavailable"
             return@withContext
         }
         val markdown = shared.readConfig()
@@ -104,7 +102,10 @@ class PlainJsonTodoRepository(
             _liveTracks.value = parsed.projects.map { LiveTrack(it.id, it.active, it.tags, it.name, it.area) }
             _configError.value = null
             _storageMessage.value = null
-            if (initialized) ensureLoadedForToday()
+            if (initialized) {
+                loadedDayKey = null
+                ensureLoadedForToday()
+            }
         } catch (e: Exception) {
             _config.value = null
             _liveTracks.value = emptyList()
@@ -209,7 +210,6 @@ class PlainJsonTodoRepository(
                 done = false,
                 createdAt = System.currentTimeMillis(),
                 important = important,
-                timePredicted = estimateMinutes,
                 estimateMinutes = estimateMinutes,
                 project = project,
                 liveTrackId = liveTrackId,
@@ -279,14 +279,8 @@ class PlainJsonTodoRepository(
     // data/PlainJsonTodoRepository.kt  (add these impls)
     override suspend fun getRecentDays(limit: Int): List<String> = withContext(io) {
         // list files like 2025-09-18.json → sort desc → take up to limit
-        val names = when {
-            shared.root() != null -> shared.names().asSequence()
-            shared.configuredUri == null -> dir.listFiles()?.asSequence()?.map { it.name } ?: emptySequence()
-            else -> {
-                _storageMessage.value = "Shared folder unavailable; history cannot be loaded"
-                emptySequence()
-            }
-        }
+        val names = if (shared.configuredUri != null) shared.names().asSequence()
+            else dir.listFiles()?.asSequence()?.map { it.name } ?: emptySequence()
         names
             .mapNotNull { name ->
                 if (name.endsWith(".json")) name.removeSuffix(".json") else null

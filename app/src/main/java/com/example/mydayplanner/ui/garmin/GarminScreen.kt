@@ -36,13 +36,12 @@ fun GarminScreen(
     modifier: Modifier = Modifier,
     watchSync: GarminWatchSync = AppGraph.garminWatchSync
 ) {
-    val snapshots by watchSync.sentSnapshots.collectAsState()
-    val forcedSend by watchSync.lastForcedSend.collectAsState()
+    val attempts by watchSync.syncHistory.collectAsState()
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Garmin snapshots") },
+                title = { Text("Garmin sync history") },
                 navigationIcon = {
                     IconButton(onClick = onOpenMenu) {
                         Icon(Icons.Filled.Menu, contentDescription = "Open menu")
@@ -62,44 +61,39 @@ fun GarminScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (snapshots.isEmpty()) {
+                if (attempts.isEmpty()) {
                     item {
                         Text(
-                            "No snapshots have been sent during this app session.",
+                            "No sync attempts during this app session.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 } else {
-                    items(snapshots) { snapshot ->
+                    items(attempts, key = { it.id }) { attempt ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    "${formatSentAt(snapshot.sentAtMillis)} · ${snapshot.deviceName}",
+                                    "${formatSentAt(attempt.startedAtMillis)} · #${attempt.id}",
                                     style = MaterialTheme.typography.titleSmall
                                 )
                                 Text(
-                                    "Sent from: ${snapshot.origin.label}",
+                                    attempt.origin.label,
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
-                                Text(
-                                    snapshot.payload.entries.joinToString(", ") { "${it.key}=${it.value}" },
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                attempt.payload?.let { payload ->
+                                    Text(
+                                        "Payload: " + payload.entries.joinToString(", ") { "${it.key}=${it.value}" },
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                attempt.entries.forEach { entry ->
+                                    Text(
+                                        "${formatSentAt(entry.timestampMillis)} · ${entry.message}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             }
-                        }
-                    }
-                }
-            }
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Last forced send", style = MaterialTheme.typography.titleSmall)
-                    if (forcedSend == null) {
-                        Text("Not requested yet", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        Text(formatSentAt(forcedSend!!.startedAtMillis), style = MaterialTheme.typography.labelMedium)
-                        forcedSend!!.entries.forEach { entry ->
-                            Text("• $entry", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -108,7 +102,7 @@ fun GarminScreen(
     }
 }
 
-private val SentAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+private val SentAtFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
 
 private fun formatSentAt(timestamp: Long): String =
     Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(SentAtFormatter)

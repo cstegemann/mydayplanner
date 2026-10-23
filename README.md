@@ -53,12 +53,19 @@ If Gradle fails very early with a message like `What went wrong: 25.0.2`, that t
 
 ## Data layout (runtime)
 
-Choose the Obsidian special folder from the banner in the app. Android's system folder picker grants persistent access without requiring a fragile hard-coded path. The app reads `_live-tracks.md` from the selected folder and stores state under its `mydayplanner/` child folder:
+Choose the Obsidian special folder from the banner in the app. Android's system folder picker grants persistent access without requiring a fragile hard-coded path. The app reads `todo_config.md` from the selected folder and stores state under `mydayplanner/YYYY/MM/` (full dates remain in filenames):
 
 - `YYYY-MM-DD.json` → todo list for that day
 - `YYYY-MM-DD.track.json` → day tracking/timer state
+- `YYYY-MM-DD.routines.json` → routine progress
 
-When a folder is selected for the first time, local JSON files are copied only if the corresponding shared file does not already exist. The shared copy wins, avoiding destructive migration. Once configured, shared storage is canonical; if it is temporarily unavailable, the app displays a warning instead of silently creating a divergent local copy.
+For example, todos for October 23 live at `mydayplanner/2026/10/2026-10-23.json`, next to that day's `.track.json` and `.routines.json` files. The app creates missing year/month folders when writing new days.
+
+Folder selection does not migrate, rename, or copy existing files. Move existing flat daily files into their year/month folders on the PC while the app is stopped, then let sync finish before starting the updated app. Flat files and backup directories are not included in the new index. The persisted folder permission remains unchanged. Once configured, shared storage is canonical; an unavailable shared folder never falls back to local storage.
+
+The app caches directory URIs and builds a logical-name → URI/metadata index with one children query per directory (state root, each year, each month). Warm reads open the indexed URI directly; writes update that index without rescanning. Creating a previously unknown year/month checks only its parent and caches the new directory. When multiple provider names normalize to the same logical name, the newest modification timestamp wins (the canonical name breaks ties). The explicit **Refresh** action reloads both the index and today's state after external sync or edits. Failed stream operations invalidate the cached directory/index and retry once.
+
+Todo estimates have one runtime field, `estimateMinutes`, which is also the only estimate field written to JSON. Old records containing only `timePredicted` remain readable; if both fields are present, `estimateMinutes` wins, regardless of JSON field order. Records without either field retain the 15-minute default. Existing day files are not rewritten in bulk: the legacy field is dropped only when those todos are normally saved.
 
 Some Android document providers add suffixes such as ` (1)` or append a second `.json` extension. The app recognizes those files as their original logical day file and reuses them instead of creating further duplicates; it does not automatically delete existing files, to avoid data loss.
 
@@ -86,3 +93,10 @@ Mobile on the paired device.
 Keeping snapshot construction independent of the proprietary transport makes the
 payload testable now and leaves DWD weather as a drop-in replacement for
 `ReducedWeather.Fake` later.
+
+The Garmin screen shows one combined session history for automatic and manual sync
+attempts, newest first. Each attempt includes its trigger, captured payload, timed
+device/status/app lookup steps, and send callbacks or failures. SDK errors and
+blocked attempts also appear here; no separate manual-send panel is used. The
+history retains the latest 100 attempts, with up to 200 log entries per attempt,
+and resets when the app process restarts.
