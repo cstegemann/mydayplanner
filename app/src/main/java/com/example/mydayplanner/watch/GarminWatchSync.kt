@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.data.TodoRepository
+import com.example.mydayplanner.weather.WeatherRepository
+import com.example.mydayplanner.weather.WeatherStatus
 import com.example.mydayplanner.ui.home.evaluateRules
 import com.garmin.android.connectiq.ConnectIQ
 import com.garmin.android.connectiq.IQApp
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
 enum class SnapshotSendOrigin(val label: String) {
+    WEATHER_UPDATE("Weather update"),
     INITIAL_LOAD("Initial data load"),
     PLANNER_UPDATE("Planner data update"),
     SDK_READY("Connect IQ initialized"),
@@ -29,7 +32,8 @@ enum class SnapshotSendOrigin(val label: String) {
 /** Sends the latest planner snapshot to every connected Garmin device with the watch face installed. */
 class GarminWatchSync(
     context: Context,
-    repo: TodoRepository
+    repo: TodoRepository,
+    weatherRepository: WeatherRepository
 ) {
     private val appContext = context.applicationContext
     private val connectIq = ConnectIQ.getInstance(appContext, ConnectIQ.IQConnectType.WIRELESS)
@@ -49,17 +53,29 @@ class GarminWatchSync(
 
     init {
         scope.launch {
-            combine(repo.todayTodos, repo.tracking, repo.config, repo.routineProgress, repo.isLoaded) {
+            val planner = combine(repo.todayTodos, repo.tracking, repo.config, repo.routineProgress, repo.isLoaded) {
                     todos, tracking, config, routineProgress, isLoaded ->
-                if (!isLoaded) return@combine null
-                val freeDay = tracking.current == Project.FREE_DAY
-                val notices = config?.let {
-                    evaluateRules(it, todos, routineProgress, freeDay)
-                }.orEmpty()
-                buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
+                if (!isLoaded) null else {
+                    val freeDay = tracking.current == Project.FREE_DAY
+                    val notices = config?.let { evaluateRules(it, todos, routineProgress, freeDay) }.orEmpty()
+                    buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
+                }
+            }
+            combine(planner, weatherRepository.status) { plannerPayload, weatherStatus ->
+                if (plannerPayload == null) return@combine null
+                plannerPayload.toMutableMap().apply {
+                    weatherStatus.values?.let { values ->
+                        values.temperatureC?.let { put("tc", it) }
+                        values.delta3h?.let { put("td", it) }
+                        values.rain?.let { put("rn", it) }
+                        values.wind?.let { put("wi", it) }
+                        values.thunder?.let { put("th", it) }
+                    }
+                    put("wd", 0) // Only advertise fine forecast when radar nowcasting really exists.
+                }
             }.filterNotNull().collect { payload ->
                 latestPayload = payload
-                val origin = if (hasBuiltPayload) SnapshotSendOrigin.PLANNER_UPDATE else SnapshotSendOrigin.INITIAL_LOAD
+                val origin = if (hasBuiltPayload) SnapshotSendOrigin.WEATHER_UPDATE else SnapshotSendOrigin.INITIAL_LOAD
                 hasBuiltPayload = true
                 sendLatest(origin)
             }
