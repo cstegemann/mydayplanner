@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 /** Periodic Android scheduler; does not keep the app permanently running. */
 class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val repository = WeatherRepository(applicationContext)
+        val repository = com.example.mydayplanner.di.AppGraph.weatherRepository
         return try {
             // Persisted location is intentionally used instead of background GPS.
             // A failed download leaves the previous data intact.
