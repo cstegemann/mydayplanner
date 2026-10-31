@@ -79,6 +79,19 @@ class MosmixParserTest {
         assertEquals(1, result.thunder)
     }
 
+    @Test fun rainWindowIgnoresLaterHeavyRain() {
+        val now = Instant.parse("2026-10-31T11:00:00Z")
+        val forecast = MosmixParser.Forecast(
+            null,
+            (0..5).map { now.plusSeconds(it * 3600L) },
+            mapOf(
+                "TTT" to List(6) { 280.15 },
+                "RR1c" to listOf(0.0, 0.01, 0.0, 0.0, 20.0, 20.0)
+            )
+        )
+        assertEquals(1, forecast.watchValues(now).rain)
+    }
+
     @Test fun rejectsMissingTemperature() {
         val forecast = MosmixParser.Forecast(null, listOf(Instant.parse("2026-10-31T11:00:00Z")), emptyMap())
         try {
