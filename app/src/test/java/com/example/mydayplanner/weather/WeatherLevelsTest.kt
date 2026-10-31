@@ -10,8 +10,21 @@ class WeatherLevelsTest {
         assertEquals(1, WeatherLevels.rain(0.001))
         assertEquals(1, WeatherLevels.rain(0.9))
         assertEquals(2, WeatherLevels.rain(1.0))
-        assertEquals(3, WeatherLevels.rain(3.0))
+        assertEquals(2, WeatherLevels.rain(3.0))
+        assertEquals(3, WeatherLevels.rain(7.5))
         assertNull(WeatherLevels.rain(null))
+    }
+
+    @Test fun aBriefDownpourIsNotAveragedOverTwoHours() {
+        val samples = listOf(
+            WeatherLevels.RainSample(0.0, 5),
+            WeatherLevels.RainSample(0.75, 5),
+            WeatherLevels.RainSample(0.0, 5)
+        )
+        assertEquals(9.0, WeatherLevels.peakRainRateMmPerHour(samples)!!, 0.001)
+        assertEquals(3, WeatherLevels.rainFromSamples(samples))
+        assertEquals(1, WeatherLevels.rainFromSamples(listOf(WeatherLevels.RainSample(0.001, 60))))
+        assertNull(WeatherLevels.rainFromSamples(listOf(WeatherLevels.RainSample(null, 5))))
     }
 
     @Test fun routineBreezeIsNotWindLevelOne() {
