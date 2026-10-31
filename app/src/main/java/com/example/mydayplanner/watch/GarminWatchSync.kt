@@ -12,35 +12,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 
 enum class SnapshotSendOrigin(val label: String) {
     INITIAL_LOAD("Initial data load"),
     PLANNER_UPDATE("Planner data update"),
     SDK_READY("Connect IQ initialized"),
+    SDK_STATUS("Connect IQ lifecycle"),
     APP_RESUME("App resumed"),
     DEVICE_RECONNECTED("Device connected"),
     FORCED("Manual send")
 }
-
-data class SentWatchSnapshot(
-    val sentAtMillis: Long,
-    val deviceName: String,
-    val origin: SnapshotSendOrigin,
-    val payload: Map<String, Any>
-)
-
-data class ForcedSendLog(
-    val startedAtMillis: Long,
-    val entries: List<String>
-)
 
 /** Sends the latest planner snapshot to every connected Garmin device with the watch face installed. */
 class GarminWatchSync(
@@ -52,11 +36,8 @@ class GarminWatchSync(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val registeredDevices = mutableSetOf<Long>()
     private val pendingForcedSends = ConcurrentHashMap<Long, Long>()
-    private val forcedSendIds = AtomicLong()
-    private val _sentSnapshots = MutableStateFlow<List<SentWatchSnapshot>>(emptyList())
-    val sentSnapshots: StateFlow<List<SentWatchSnapshot>> = _sentSnapshots.asStateFlow()
-    private val _lastForcedSend = MutableStateFlow<ForcedSendLog?>(null)
-    val lastForcedSend: StateFlow<ForcedSendLog?> = _lastForcedSend.asStateFlow()
+    private val history = WatchSyncHistory()
+    internal val syncHistory = history.attempts
 
     @Volatile
     private var sdkReady = false
@@ -84,131 +65,139 @@ class GarminWatchSync(
             }
         }
 
-        connectIq.initialize(appContext, true, object : ConnectIQ.ConnectIQListener {
+        runCatching { connectIq.initialize(appContext, true, object : ConnectIQ.ConnectIQListener {
             override fun onSdkReady() {
                 sdkReady = true
-                registerDevicesAndSend(SnapshotSendOrigin.SDK_READY)
+                sendLatest(SnapshotSendOrigin.SDK_READY)
             }
 
             override fun onInitializeError(errorStatus: ConnectIQ.IQSdkErrorStatus) {
+                sdkReady = false
+                val attempt = history.start(SnapshotSendOrigin.SDK_STATUS, latestPayload)
+                history.append(attempt.id, "Connect IQ initialization failed: $errorStatus")
                 Log.w(TAG, "Connect IQ initialization failed: $errorStatus")
             }
 
             override fun onSdkShutDown() {
                 sdkReady = false
                 synchronized(registeredDevices) { registeredDevices.clear() }
+                pendingForcedSends.values.toSet().forEach { history.append(it, "Stopped waiting: Connect IQ SDK shut down") }
+                pendingForcedSends.clear()
+                val attempt = history.start(SnapshotSendOrigin.SDK_STATUS, latestPayload)
+                history.append(attempt.id, "Connect IQ SDK shut down")
             }
-        })
+        }) }.onFailure { error ->
+            val attempt = history.start(SnapshotSendOrigin.SDK_STATUS, latestPayload)
+            history.append(attempt.id, "Connect IQ initialization threw: ${error.message}")
+            Log.w(TAG, "Connect IQ initialization failed", error)
+        }
     }
 
     /** Re-checks connections and sends current data, for example when the app returns to the foreground. */
-    fun onAppResumed() {
-        if (sdkReady) registerDevicesAndSend(SnapshotSendOrigin.APP_RESUME)
-    }
+    fun onAppResumed() = sendLatest(SnapshotSendOrigin.APP_RESUME)
 
-    /** Immediately retries the current snapshot on all connected devices. */
-    fun sendSnapshot() {
-        val id = forcedSendIds.incrementAndGet()
-        _lastForcedSend.value = ForcedSendLog(System.currentTimeMillis(), listOf("Send snapshot requested"))
+    /** Manual and automatic attempts share the same detailed, timestamped history. */
+    fun sendSnapshot() = sendLatest(SnapshotSendOrigin.FORCED)
+
+    private fun sendLatest(origin: SnapshotSendOrigin) {
+        val attempt = history.start(origin, latestPayload)
+        history.append(attempt.id, "Snapshot requested: ${origin.label}")
         if (!sdkReady) {
-            appendForcedLog(id, "Stopped: Connect IQ SDK is not ready")
+            history.append(attempt.id, "Stopped: Connect IQ SDK is not ready")
             return
         }
-        if (latestPayload == null) {
-            appendForcedLog(id, "Stopped: planner data has not finished loading")
+        if (attempt.payload == null) {
+            history.append(attempt.id, "Stopped: planner data has not finished loading")
             return
         }
-        appendForcedLog(id, "Connect IQ SDK ready; checking known devices")
-        registerDevicesAndSend(SnapshotSendOrigin.FORCED, id)
-    }
-
-    private fun registerDevicesAndSend(origin: SnapshotSendOrigin, forcedSendId: Long? = null) {
-        val devices = connectIq.knownDevices.orEmpty()
-        forcedSendId?.let { appendForcedLog(it, "Found ${devices.size} known device(s)") }
+        val devices = runCatching { connectIq.knownDevices.orEmpty() }.getOrElse { error ->
+            history.append(attempt.id, "Known device lookup failed: ${error.message}")
+            return
+        }
+        history.append(attempt.id, "Connect IQ SDK ready; found ${devices.size} known device(s)")
         devices.forEach { device ->
             val shouldRegister = synchronized(registeredDevices) {
                 registeredDevices.add(device.deviceIdentifier)
             }
             if (shouldRegister) {
-                connectIq.registerForDeviceEvents(device) { changedDevice, status ->
-                    val pendingForcedSend = pendingForcedSends[changedDevice.deviceIdentifier]
-                    pendingForcedSend?.let { appendForcedLog(it, "${changedDevice.friendlyName}: device event $status") }
-                    if (status == IQDevice.IQDeviceStatus.CONNECTED) {
-                        pendingForcedSends.remove(changedDevice.deviceIdentifier)
-                        sendTo(
-                            changedDevice,
-                            if (pendingForcedSend != null) SnapshotSendOrigin.FORCED else SnapshotSendOrigin.DEVICE_RECONNECTED,
-                            pendingForcedSend
-                        )
+                runCatching {
+                    connectIq.registerForDeviceEvents(device) { changedDevice, status ->
+                        val pendingId = pendingForcedSends[changedDevice.deviceIdentifier]
+                        pendingId?.let { history.append(it, "${changedDevice.friendlyName}: device event $status") }
+                        if (status == IQDevice.IQDeviceStatus.CONNECTED) {
+                            val pending = pendingForcedSends.remove(changedDevice.deviceIdentifier)
+                            val waitingAttempt = history.attempts.value.firstOrNull { it.id == pending }
+                            val reconnect = waitingAttempt ?: history.start(SnapshotSendOrigin.DEVICE_RECONNECTED, latestPayload)
+                            history.append(reconnect.id, "${changedDevice.friendlyName}: connected; requesting watch app info")
+                            sendTo(changedDevice, reconnect)
+                        } else if (pendingId == null) {
+                            val event = history.start(SnapshotSendOrigin.DEVICE_RECONNECTED, null)
+                            history.append(event.id, "${changedDevice.friendlyName}: device event $status")
+                        }
                     }
+                    history.append(attempt.id, "${device.friendlyName}: registered device events")
+                }.onFailure { error ->
+                    synchronized(registeredDevices) { registeredDevices.remove(device.deviceIdentifier) }
+                    history.append(attempt.id, "${device.friendlyName}: event registration failed (${error.message})")
                 }
             }
-            val status = runCatching { connectIq.getDeviceStatus(device) }
-                .getOrElse { error ->
-                    forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: status lookup failed (${error.message})") }
-                    IQDevice.IQDeviceStatus.UNKNOWN
-                }
-            device.status = status
+            val status = runCatching { connectIq.getDeviceStatus(device) }.getOrElse { error ->
+                history.append(attempt.id, "${device.friendlyName}: status lookup failed (${error.message})")
+                IQDevice.IQDeviceStatus.UNKNOWN
+            }
+            history.append(attempt.id, "${device.friendlyName}: current status $status")
             if (status == IQDevice.IQDeviceStatus.CONNECTED) {
-                forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: connected; requesting watch app info") }
-                sendTo(device, origin, forcedSendId)
-            } else {
-                forcedSendId?.let {
-                    appendForcedLog(it, "${device.friendlyName}: current status $status; waiting for a device event")
-                    pendingForcedSends[device.deviceIdentifier] = it
+                pendingForcedSends.remove(device.deviceIdentifier)?.let {
+                    history.append(it, "${device.friendlyName}: waiting send superseded by attempt ${attempt.id}")
                 }
+                history.append(attempt.id, "${device.friendlyName}: requesting watch app info")
+                sendTo(device, attempt)
+            } else if (origin == SnapshotSendOrigin.FORCED) {
+                pendingForcedSends.put(device.deviceIdentifier, attempt.id)?.let {
+                    history.append(it, "${device.friendlyName}: superseded by manual attempt ${attempt.id}")
+                }
+                history.append(attempt.id, "${device.friendlyName}: waiting for a connected device event")
+            } else {
+                history.append(attempt.id, "${device.friendlyName}: skipped; device is not connected")
             }
         }
     }
 
-    private fun sendLatest(origin: SnapshotSendOrigin) {
-        if (!sdkReady) return
-        connectIq.knownDevices.orEmpty()
-            .filter { runCatching { connectIq.getDeviceStatus(it) }.getOrNull() == IQDevice.IQDeviceStatus.CONNECTED }
-            .forEach { sendTo(it, origin) }
-    }
-
-    private fun sendTo(
-        device: IQDevice,
-        origin: SnapshotSendOrigin,
-        forcedSendId: Long? = null
-    ) {
-        if (latestPayload == null) return
-        connectIq.getApplicationInfo(WATCH_FACE_UUID, device,
-            object : ConnectIQ.IQApplicationInfoListener {
-                override fun onApplicationInfoReceived(app: IQApp) {
-                    val payload = latestPayload ?: return
-                    forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: watch app found; sending payload") }
-                    _sentSnapshots.update { snapshots ->
-                        listOf(SentWatchSnapshot(System.currentTimeMillis(), device.friendlyName, origin, payload.toMap())) +
-                            snapshots.take(MAX_CACHED_SNAPSHOTS - 1)
-                    }
-                    connectIq.sendMessage(device, app, payload) { _, _, status ->
-                        forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: send result $status") }
-                        if (status != ConnectIQ.IQMessageStatus.SUCCESS) {
-                            Log.w(TAG, "Watch snapshot send failed for ${device.friendlyName}: $status")
+    private fun sendTo(device: IQDevice, attempt: WatchSyncAttempt) {
+        val payload = attempt.payload
+        if (payload == null) {
+            history.append(attempt.id, "${device.friendlyName}: stopped; no planner payload")
+            return
+        }
+        runCatching {
+            connectIq.getApplicationInfo(WATCH_FACE_UUID, device,
+                object : ConnectIQ.IQApplicationInfoListener {
+                    override fun onApplicationInfoReceived(app: IQApp) {
+                        history.append(attempt.id, "${device.friendlyName}: watch app found; sending payload")
+                        runCatching {
+                            connectIq.sendMessage(device, app, payload) { _, _, status ->
+                                history.append(attempt.id, "${device.friendlyName}: send result $status")
+                                if (status != ConnectIQ.IQMessageStatus.SUCCESS) {
+                                    Log.w(TAG, "Watch snapshot send failed for ${device.friendlyName}: $status")
+                                }
+                            }
+                        }.onFailure { error ->
+                            history.append(attempt.id, "${device.friendlyName}: send threw (${error.message})")
                         }
                     }
-                }
 
-                override fun onApplicationNotInstalled(applicationId: String) {
-                    forcedSendId?.let { appendForcedLog(it, "${device.friendlyName}: watch face is not installed") }
-                    Log.d(TAG, "Watch face $applicationId is not installed on ${device.friendlyName}")
+                    override fun onApplicationNotInstalled(applicationId: String) {
+                        history.append(attempt.id, "${device.friendlyName}: watch face $applicationId is not installed")
+                    }
                 }
-            }
-        )
-    }
-
-    private fun appendForcedLog(id: Long, message: String) {
-        if (forcedSendIds.get() != id) return
-        _lastForcedSend.update { current ->
-            current?.copy(entries = current.entries + message)
+            )
+        }.onFailure { error ->
+            history.append(attempt.id, "${device.friendlyName}: watch app lookup failed (${error.message})")
         }
     }
 
     private companion object {
         const val TAG = "GarminWatchSync"
         const val WATCH_FACE_UUID = "36629bca-a6fa-4be8-a2b2-4a8a870c7415"
-        const val MAX_CACHED_SNAPSHOTS = 100
     }
 }

@@ -4,18 +4,22 @@ package com.example.mydayplanner.data.models
 import com.example.mydayplanner.config.Project
 import com.example.mydayplanner.config.TaskDifficulty
 import java.util.UUID
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KeepGeneratedSerializer
+import kotlinx.serialization.Serializable
 
-@kotlinx.serialization.Serializable
+@OptIn(ExperimentalSerializationApi::class)
+@KeepGeneratedSerializer
+@Serializable(with = TodoSerializer::class)
 data class Todo(
     val id: String = UUID.randomUUID().toString(),
     val text: String,
     val done: Boolean = false,
-    // Legacy estimate field kept for backward compatibility with existing day JSON files/UI code.
-    val timePredicted: Int = 0,
     val createdAt: Long = System.currentTimeMillis(),
     val completedAt: Long? = null,
     val important: Boolean = false,
-    val estimateMinutes: Int = 15,
+    @EncodeDefault val estimateMinutes: Int = 15,
     val project: Project = Project.Other,
     val pushedToTomorrow: Boolean = false,
     val liveTrackId: String? = null,
