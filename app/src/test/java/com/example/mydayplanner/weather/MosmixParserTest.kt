@@ -1,10 +1,60 @@
 package com.example.mydayplanner.weather
 
 import java.time.Instant
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.*
 import org.junit.Test
 
 class MosmixParserTest {
+    private val minimalKml = """
+        <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:forecast="urn:dwd">
+          <forecast:TimeStep>2026-10-31T11:00:00Z</forecast:TimeStep>
+          <forecast:Forecast forecast:elementName="TTT">
+            <forecast:value>280.15 -999 -</forecast:value>
+          </forecast:Forecast>
+          <forecast:Forecast forecast:elementName="unused">
+            <forecast:value>999</forecast:value>
+          </forecast:Forecast>
+        </kml>
+    """.trimIndent()
+
+    @Test fun parsesKmzAndKeepsMissingValues() {
+        val bytes = ByteArrayOutputStream()
+        ZipOutputStream(bytes).use { zip ->
+            zip.putNextEntry(ZipEntry("forecast.kml"))
+            zip.write(minimalKml.toByteArray())
+            zip.closeEntry()
+        }
+        val forecast = MosmixParser.parseKmz(bytes.toByteArray())
+        assertEquals(listOf(280.15, null, null), forecast.values["TTT"])
+        assertEquals(setOf("TTT"), forecast.values.keys)
+    }
+
+    @Test fun rejectsDoctypesInUtf8AndUtf16() {
+        val declarations = listOf(
+            "<!DOCTYPE kml>",
+            """<!DOCTYPE kml [<!ENTITY temperature "280.15">]>""",
+            """<!DOCTYPE kml SYSTEM "https://example.invalid/weather.dtd">""",
+            """<!DOCTYPE kml [<!ENTITY % external SYSTEM "file:///nonexistent-weather.dtd">%external;]>"""
+        )
+        for (declaration in declarations) {
+            for (charset in listOf(Charsets.UTF_8, Charsets.UTF_16)) {
+                val xml = (declaration + minimalKml).toByteArray(charset)
+                val failure = assertThrows(IllegalStateException::class.java) {
+                    MosmixParser.parseKml(xml)
+                }
+                assertEquals("DOCTYPE is not allowed in MOSMIX KML", failure.message)
+            }
+        }
+    }
+
+    @Test fun parsesUtf16WithoutDoctype() {
+        assertEquals(listOf(280.15, null, null),
+            MosmixParser.parseKml(minimalKml.toByteArray(Charsets.UTF_16)).values["TTT"])
+    }
+
     @Test fun parsesForecastAndReducesTemperature() {
         val xml = """
           <kml xmlns:dwd="https://opendata.dwd.de/weather/lib/pointforecast_dwd_extension_V1_0.xsd">

@@ -3,8 +3,8 @@ package com.example.mydayplanner.weather
 import java.io.ByteArrayInputStream
 import java.time.Instant
 import java.util.zip.ZipInputStream
-import javax.xml.parsers.DocumentBuilderFactory
-import org.w3c.dom.Element
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -95,35 +95,49 @@ object MosmixParser {
     }
 
     fun parseKml(xml: ByteArray): Forecast {
-        val factory = DocumentBuilderFactory.newInstance().apply {
+        // Android does not support Xerces' disallow-doctype-decl feature.
+        // Use its native pull parser and reject DTDs explicitly before reading values.
+        val parser = XmlPullParserFactory.newInstance().apply {
             isNamespaceAware = true
-            setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-            setFeature("http://xml.org/sax/features/external-general-entities", false)
-            setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-            isExpandEntityReferences = false
+        }.newPullParser().apply {
+            // DTD processing defaults to false; some implementations reject even
+            // setting this optional feature to false, so verify it without setting it.
+            check(!getFeature(XmlPullParser.FEATURE_PROCESS_DOCDECL)) {
+                "MOSMIX XML parser must not process DTDs"
+            }
+            setInput(ByteArrayInputStream(xml), null)
         }
-        val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(xml))
-        val times = doc.getElementsByTagNameNS("*", "TimeStep")
-        val parsedTimes = (0 until times.length).map { Instant.parse(times.item(it).textContent.trim()) }
-        check(parsedTimes.isNotEmpty()) { "No MOSMIX forecast timestamps" }
-        val issueNodes = doc.getElementsByTagNameNS("*", "IssueTime")
-        val issuedAt = if (issueNodes.length > 0) runCatching {
-            Instant.parse(issueNodes.item(0).textContent.trim())
-        }.getOrNull() else null
-        val forecasts = doc.getElementsByTagNameNS("*", "Forecast")
+        val parsedTimes = mutableListOf<Instant>()
+        var issuedAt: Instant? = null
+        var parameter: String? = null
         val values = mutableMapOf<String, List<Double?>>()
-        for (i in 0 until forecasts.length) {
-            val element = forecasts.item(i) as? Element ?: continue
-            val key = (0 until element.attributes.length).firstNotNullOfOrNull { index ->
-                element.attributes.item(index).takeIf { it.localName == "elementName" }?.nodeValue
-            } ?: continue
-            if (key !in setOf("TTT", "RR1c", "RR3c", "FX1", "FX3", "FF", "wwT3", "ww")) continue
-            val nodes = element.getElementsByTagNameNS("*", "value")
-            if (nodes.length == 0) continue
-            val numbers = nodes.item(0).textContent.trim().split(Regex("""\s+"""))
-                .map { it.toDoubleOrNull()?.takeUnless { value -> value == -999.0 } }
-            values[key] = numbers
+        val parameters = setOf("TTT", "RR1c", "RR3c", "FX1", "FX3", "FF", "wwT3", "ww")
+        while (true) {
+            // nextToken exposes DOCDECL; next would silently skip it.
+            when (parser.nextToken()) {
+                XmlPullParser.END_DOCUMENT -> break
+                XmlPullParser.DOCDECL -> error("DOCTYPE is not allowed in MOSMIX KML")
+                XmlPullParser.START_TAG -> when (parser.name) {
+                    "TimeStep" -> parsedTimes.add(Instant.parse(parser.nextText().trim()))
+                    "IssueTime" -> {
+                        val text = parser.nextText().trim()
+                        issuedAt = runCatching { Instant.parse(text) }.getOrNull()
+                    }
+                    "Forecast" -> parameter = (0 until parser.attributeCount)
+                        .firstNotNullOfOrNull { index ->
+                            parser.getAttributeValue(index).takeIf {
+                                parser.getAttributeName(index) == "elementName"
+                            }
+                        }?.takeIf { it in parameters }
+                    "value" -> parameter?.let { key ->
+                        values[key] = parser.nextText().trim().split(Regex("""\s+"""))
+                            .map { it.toDoubleOrNull()?.takeUnless { value -> value == -999.0 } }
+                    }
+                }
+                XmlPullParser.END_TAG -> if (parser.name == "Forecast") parameter = null
+            }
         }
+        check(parsedTimes.isNotEmpty()) { "No MOSMIX forecast timestamps" }
         return Forecast(issuedAt, parsedTimes, values)
     }
 }
