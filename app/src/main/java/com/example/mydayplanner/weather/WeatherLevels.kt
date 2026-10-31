@@ -1,31 +1,53 @@
 package com.example.mydayplanner.weather
 
 /**
- * Single source of truth for watch-facing weather levels.
+ * Source-independent mapping of physical weather values to the watch's levels.
  *
- * Rain is the highest *hourly* forecast rate in the next three hours, in mm/h.
- * Any strictly positive amount is at least level 1; missing data is null, not 0.
+ * Rain answers "How bad could rain get in the NEXT TWO HOURS?", not "How many
+ * millimetres accumulate in two hours?". Use the highest short-period intensity,
+ * so one violent five-minute shower is not diluted by a dry hour.
  *
- * Wind uses the maximum predicted gust (m/s) over the next three hours.
- * Level 1 deliberately starts at a noticeable breeze, rather than routine light wind.
- * Adjust these boundaries after comparing the face with outdoor conditions.
+ * MOSMIX provides hour-long accumulations (RR1c); the later radar source can
+ * supply 5-minute accumulations. Both must use the SAME conversion below.
+ *
+ * The thresholds are personal/action-oriented, NOT official DWD warning levels.
+ * A level 3 is a reason to consider shelter, not necessarily a DWD warning.
+ *
+ * Wind uses the maximum predicted gust (m/s) in the forecast window.
  */
 object WeatherLevels {
+    const val rainLookaheadHours = 2L
     const val rainModerateMmPerHour = 1.0
-    const val rainHeavyMmPerHour = 3.0
+    const val rainHeavyMmPerHour = 7.5
     const val windNoticeableGustMetersPerSecond = 7.0
     const val windStrongGustMetersPerSecond = 11.0
     const val windVeryStrongGustMetersPerSecond = 17.0
     const val thunderPossiblePercent = 20.0
 
-    fun rain(mmPerHour: Double?): Int? = mmPerHour?.let {
-        when {
-            it <= 0.0 -> 0
-            it < rainModerateMmPerHour -> 1
-            it < rainHeavyMmPerHour -> 2
-            else -> 3
+    /** Amount accumulated DURING a period. E.g. 0.75 mm in 5 min = 9 mm/h. */
+    data class RainSample(val amountMm: Double?, val durationMinutes: Int)
+
+    /** Peak average rate of any supplied period; null means unavailable, not dry. */
+    fun peakRainRateMmPerHour(samples: Iterable<RainSample>): Double? =
+        samples.mapNotNull { sample ->
+            val amount = sample.amountMm ?: return@mapNotNull null
+            if (!amount.isFinite() || amount < 0.0 || sample.durationMinutes <= 0) return@mapNotNull null
+            amount * 60.0 / sample.durationMinutes
+        }.maxOrNull()
+
+    fun rainFromSamples(samples: Iterable<RainSample>): Int? = rain(peakRainRateMmPerHour(samples))
+
+    /** Argument is an intensity, not an amount accumulated over an arbitrary period. */
+    fun rain(mmPerHour: Double?): Int? = mmPerHour
+        ?.takeIf { it.isFinite() && it >= 0.0 }
+        ?.let {
+            when {
+                it == 0.0 -> 0
+                it < rainModerateMmPerHour -> 1
+                it < rainHeavyMmPerHour -> 2
+                else -> 3
+            }
         }
-    }
 
     fun wind(gustMetersPerSecond: Double?): Int? = gustMetersPerSecond?.let {
         when {
