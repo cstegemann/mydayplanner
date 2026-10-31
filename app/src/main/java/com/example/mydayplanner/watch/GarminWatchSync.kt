@@ -53,22 +53,26 @@ class GarminWatchSync(
 
     init {
         scope.launch {
-            combine(repo.todayTodos, repo.tracking, repo.config, repo.routineProgress, repo.isLoaded, weatherRepository.status) {
-                    todos, tracking, config, routineProgress, isLoaded, weatherStatus ->
-                if (!isLoaded) return@combine null
-                val freeDay = tracking.current == Project.FREE_DAY
-                val notices = config?.let {
-                    evaluateRules(it, todos, routineProgress, freeDay)
-                }.orEmpty()
-                buildWatchSnapshot(config, routineProgress, todos, notices, freeDay, weather = weatherStatus.values?.let { values ->
-                    ReducedWeather(
-                        values.temperatureC ?: 0,
-                        values.delta3h ?: 0,
-                        values.rain ?: 0,
-                        values.wind ?: 0,
-                        values.thunder ?: 0
-                    )
-                } ?: ReducedWeather.Fake)
+            val planner = combine(repo.todayTodos, repo.tracking, repo.config, repo.routineProgress, repo.isLoaded) {
+                    todos, tracking, config, routineProgress, isLoaded ->
+                if (!isLoaded) null else {
+                    val freeDay = tracking.current == Project.FREE_DAY
+                    val notices = config?.let { evaluateRules(it, todos, routineProgress, freeDay) }.orEmpty()
+                    buildWatchSnapshot(config, routineProgress, todos, notices, freeDay)
+                }
+            }
+            combine(planner, weatherRepository.status) { plannerPayload, weatherStatus ->
+                if (plannerPayload == null) return@combine null
+                plannerPayload.toMutableMap().apply {
+                    weatherStatus.values?.let { values ->
+                        values.temperatureC?.let { put("tc", it) }
+                        values.delta3h?.let { put("td", it) }
+                        values.rain?.let { put("rn", it) }
+                        values.wind?.let { put("wi", it) }
+                        values.thunder?.let { put("th", it) }
+                    }
+                    put("wd", if (weatherStatus.fine) 1 else 0)
+                }
             }.filterNotNull().collect { payload ->
                 latestPayload = payload
                 val origin = if (hasBuiltPayload) SnapshotSendOrigin.WEATHER_UPDATE else SnapshotSendOrigin.INITIAL_LOAD
