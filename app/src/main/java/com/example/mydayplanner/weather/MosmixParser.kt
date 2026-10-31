@@ -35,14 +35,12 @@ object MosmixParser {
             val rain = hourlyRain.maxOrNull() ?: (at("RR3c", threeHours)?.div(3.0))
             val thunderProbability = at("wwT3", threeHours)
             val currentWeather = at("ww", oneHour)?.toInt()
-            val thunder = if (currentWeather != null && currentWeather in 95..99) 2
-                else if (thunderProbability != null) { if (thunderProbability >= 20.0) 1 else 0 }
-                else null
+            val thunder = WeatherLevels.thunder(currentWeather, thunderProbability)
             return WeatherValues(
                 temperatureC = (currentK - 273.15).roundToInt(),
                 delta3h = futureK?.let { (it - currentK).roundToInt() },
-                rain = rain?.let { when { it >= 3.0 -> 3; it >= 1.0 -> 2; it >= 0.1 -> 1; else -> 0 } },
-                wind = gust?.let { when { it >= 17 -> 3; it >= 10 -> 2; it >= 5 -> 1; else -> 0 } },
+                rain = WeatherLevels.rain(rain),
+                wind = WeatherLevels.wind(gust),
                 thunder = thunder,
                 rawRainMmPerHour = rain,
                 rawGustMetersPerSecond = gust,
