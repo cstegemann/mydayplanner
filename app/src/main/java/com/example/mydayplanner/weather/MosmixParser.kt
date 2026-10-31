@@ -30,9 +30,22 @@ object MosmixParser {
             val currentK = at("TTT", now) ?: error("MOSMIX has no current temperature")
             val futureK = at("TTT", threeHours)
             val gust = at("FX3", threeHours) ?: at("FX1", oneHour) ?: at("FF", now)
-            // RR1c is precipitation over the preceding hour; prefer its 3 upcoming buckets.
-            val hourlyRain = (1..3).mapNotNull { at("RR1c", now.plusSeconds(it * 3600L)) }
-            val rain = hourlyRain.maxOrNull() ?: (at("RR3c", threeHours)?.div(3.0))
+            // RR1c is accumulated rain over the PRECEDING hour, valid at its end.
+            // Include hourly buckets intersecting [now, now+2h], including the
+            // current (partially elapsed) one. MOSMIX cannot resolve 5-min showers.
+            val horizon = now.plusSeconds(WeatherLevels.rainLookaheadHours * 3600)
+            val hourlySamples = times.indices.mapNotNull { index ->
+                val end = times[index]
+                val start = end.minusSeconds(3600)
+                if (end <= now || start >= horizon) null else {
+                    values["RR1c"]?.getOrNull(index)?.let { WeatherLevels.RainSample(it, 60) }
+                }
+            }
+            // A missing RR1c window may be represented by a coarser 3h total.
+            val fallbackRain = if (hourlySamples.isEmpty()) {
+                at("RR3c", threeHours)?.let { listOf(WeatherLevels.RainSample(it, 180)) }
+            } else null
+            val rain = WeatherLevels.peakRainRateMmPerHour(fallbackRain ?: hourlySamples)
             val thunderProbability = at("wwT3", threeHours)
             val currentWeather = at("ww", oneHour)?.toInt()
             val thunder = WeatherLevels.thunder(currentWeather, thunderProbability)
