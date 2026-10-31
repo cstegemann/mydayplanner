@@ -60,13 +60,23 @@ object MosmixParser {
         val rawThunderProbabilityPercent: Double?
     )
 
+    /** DWD catalogue uses degrees.minutes coordinates, NOT decimal degrees. */
+    private fun degreeMinutes(raw: String): Double? {
+        val parts = raw.split('.')
+        if (parts.size != 2 || parts[1].length != 2) return null
+        val degrees = parts[0].toIntOrNull() ?: return null
+        val minutes = parts[1].toIntOrNull() ?: return null
+        if (minutes !in 0..59) return null
+        return (if (raw.startsWith("-")) -1 else 1) * (kotlin.math.abs(degrees) + minutes / 60.0)
+    }
+
     /** DWD catalogue is fixed-column-ish text; names may contain spaces. */
     fun parseStations(text: String): List<Station> {
         val pattern = Regex("""^\s*([A-Za-z0-9]{4,6})\s+\S{4}\s+(.+?)\s+(-?\d{1,2}\.\d+)\s+(-?\d{1,3}\.\d+)\s+-?\d+\s*$""")
         return text.lineSequence().mapNotNull { line ->
             val match = pattern.matchEntire(line) ?: return@mapNotNull null
-            val lat = match.groupValues[3].toDoubleOrNull() ?: return@mapNotNull null
-            val lon = match.groupValues[4].toDoubleOrNull() ?: return@mapNotNull null
+            val lat = degreeMinutes(match.groupValues[3]) ?: return@mapNotNull null
+            val lon = degreeMinutes(match.groupValues[4]) ?: return@mapNotNull null
             Station(match.groupValues[1], match.groupValues[2].trim(), lat, lon)
         }.toList()
     }
