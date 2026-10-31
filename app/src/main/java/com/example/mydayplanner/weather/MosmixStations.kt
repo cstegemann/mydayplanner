@@ -8,7 +8,7 @@ import java.net.URL
 /** DWD MOSMIX station catalogue, cached locally. Never sends GPS coordinates to DWD. */
 class MosmixStations(private val context: Context) {
     private val file = java.io.File(context.filesDir, "mosmix_stations.cfg")
-    private val url = "https://www.dwd.de/DE/leistungen/met_verfahren_mosmix/mosmix_stationskatalog.cfg?__blob=publicationFile&v=3"
+    private val url = "https://www.dwd.de/DE/leistungen/met_verfahren_mosmix/mosmix_stationskatalog.cfg?view=nasPublication&nn=16102"
     private val fallback = listOf(
         MosmixParser.Station("10338", "Hannover", 52.46, 9.68),
         MosmixParser.Station("10147", "Hamburg", 53.63, 10.00),
