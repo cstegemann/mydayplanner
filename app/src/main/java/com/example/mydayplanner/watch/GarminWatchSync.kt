@@ -71,7 +71,7 @@ class GarminWatchSync(
                         values.wind?.let { put("wi", it) }
                         values.thunder?.let { put("th", it) }
                     }
-                    put("wd", if (weatherStatus.fine) 1 else 0)
+                    put("wd", 0) // Only advertise fine forecast when radar nowcasting really exists.
                 }
             }.filterNotNull().collect { payload ->
                 latestPayload = payload
