@@ -69,4 +69,5 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.snakeyaml)
     implementation(libs.garmin.connect.iq)
+    implementation("androidx.work:work-runtime-ktx:2.11.0")
 }
