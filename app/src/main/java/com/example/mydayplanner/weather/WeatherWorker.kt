@@ -15,7 +15,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         return try {
             // Persisted location is intentionally used instead of background GPS.
             // A failed download leaves the previous data intact.
-            val success = repository.refresh()
+            val success = repository.refresh(background = true)
             if (success) Result.success() else Result.retry()
         } catch (_: Exception) {
             Result.retry()

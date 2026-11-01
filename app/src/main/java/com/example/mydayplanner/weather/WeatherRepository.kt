@@ -26,7 +26,11 @@ data class WeatherStatus(
     val lastDownloadBytes: Long = 0,
     val lastHttpCode: Int? = null,
     val locationAgeMillis: Long? = null,
-    val lastAttemptMillis: Long = 0L
+    val lastAttemptMillis: Long = 0L,
+    val warnings: DwdCapWarnings.Summary? = null,
+    val warningsUpdatedMillis: Long = 0L,
+    val warningError: String? = null,
+    val warningFilename: String = ""
 ) {
     val fine: Boolean get() = fineUntilMillis > System.currentTimeMillis()
 }
@@ -66,6 +70,7 @@ class WeatherRepository(private val context: Context) {
                             .putString("lon", location.longitude.toString())
                             .putLong("locationTime", location.time).apply()
                     }
+                    refreshWarnings(location.latitude, location.longitude, force)
                     val stations = MosmixStations(context).candidates(location.latitude, location.longitude)
                     val closest = stations.firstOrNull() ?: error("No MOSMIX stations available")
                     val movedStation = previous.station.isNotBlank() &&
@@ -119,6 +124,25 @@ class WeatherRepository(private val context: Context) {
                 }
             }
         }
+
+    private fun refreshWarnings(latitude: Double, longitude: Double, force: Boolean) {
+        val status = mutable.value
+        if (!force && System.currentTimeMillis() - status.warningsUpdatedMillis < 15 * 60_000L &&
+            status.warnings != null) return
+        try {
+            val result = DwdWarningClient().fetch(latitude, longitude, Instant.now())
+            recordUsage(result.bytes, 200)
+            mutable.value = mutable.value.copy(
+                warnings = result.summary,
+                warningsUpdatedMillis = System.currentTimeMillis(),
+                warningFilename = result.filename,
+                warningError = null
+            )
+        } catch (error: Exception) {
+            // CAP failure cannot prevent the independent MOSMIX refresh.
+            mutable.value = mutable.value.copy(warningError = error.message ?: "CAP unavailable")
+        }
+    }
 
     private fun recordUsage(bytes: Long, code: Int) {
         val previous = mutable.value

@@ -72,6 +72,15 @@ class GarminWatchSync(
                         values.wind?.let { put("wi", it) }
                         values.thunder?.let { put("th", it) }
                     }
+                    val warningAge = System.currentTimeMillis() - weatherStatus.warningsUpdatedMillis
+                    if (warningAge in 0..(30 * 60_000L)) {
+                        weatherStatus.warnings?.let { warnings ->
+                            val now = java.time.Instant.now()
+                            val fromWarnings = warnings.thunderLevel(now)
+                            put("th", maxOf((get("th") as? Int) ?: 0, fromWarnings))
+                            put("wa", warnings.highestSeverity)
+                        }
+                    }
                     put("wd", 0) // Only advertise fine forecast when radar nowcasting really exists.
                 }
             }.filterNotNull().distinctUntilChanged().collect { payload ->
