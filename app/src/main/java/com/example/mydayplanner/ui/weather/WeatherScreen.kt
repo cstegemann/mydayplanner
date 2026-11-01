@@ -54,13 +54,24 @@ fun WeatherScreen(onOpenMenu: () -> Unit) {
                 Text("Thunder: ${v.thunder ?: "—"} (3h probability %: ${v.rawThunderProbabilityPercent ?: "—"})")
             }
             HorizontalDivider()
+            Text("Official DWD warnings", style = MaterialTheme.typography.titleMedium)
+            Text("Checked: ${format(status.warningsUpdatedMillis)}")
+            Text("Feed: ${status.warningFilename.ifBlank { "—" }}")
+            status.warningError?.let { Text("Warning-feed error: $it", color = MaterialTheme.colorScheme.error) }
+            val warnings = status.warnings?.warnings.orEmpty()
+            Text("Warnings relevant to saved location: ${warnings.size}")
+            warnings.forEach { warning ->
+                Text("${warning.headline} (severity ${warning.severity}, until ${warning.expires})")
+            }
+            Text("Thunder level is promoted by current or upcoming thunderstorm warnings.")
+            HorizontalDivider()
             Text("Download accounting", style = MaterialTheme.typography.titleMedium)
             Text("Successful downloads: ${status.requestCount}")
             Text("Last payload: ${status.lastDownloadBytes} bytes")
             Text("Total payload: ${status.downloadBytes} bytes (${"%.2f".format(status.downloadBytes / 1_048_576.0)} MiB)")
             Text("Last HTTP status: ${status.lastHttpCode ?: "—"}")
             Text("Accounting measures response-body bytes received by this weather provider, not TLS/HTTP overhead or Garmin traffic.")
-            Text("Warnings, radar, KONRAD and international fallback are not yet implemented.")
+            Text("Lightning cell observations, radar and international fallback are not yet implemented.")
         }
     }
 }
