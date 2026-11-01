@@ -41,6 +41,10 @@ fun WeatherScreen(onOpenMenu: () -> Unit) {
             Text("Provider: DWD MOSMIX_L (forecast)", style = MaterialTheme.typography.titleMedium)
             Text("Station: ${status.station.ifBlank { "Not selected" }}")
             Text("Last successful refresh: ${format(status.lastUpdatedMillis)}")
+            Text("Last refresh attempt: ${format(status.lastAttemptMillis)}")
+            Text("Background checks: every ~15 min (Android may defer)")
+            Text("MOSMIX minimum download interval: ~5 hours, or when station changes")
+            Text("Saved location age: ${status.locationAgeMillis?.let { \"${it / 60000} min\" } ?: \"—\"}")
             status.lastError?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
             status.values?.let { v ->
                 Text("Temperature: ${v.temperatureC ?: "—"} °C")

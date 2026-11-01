@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -73,7 +74,7 @@ class GarminWatchSync(
                     }
                     put("wd", 0) // Only advertise fine forecast when radar nowcasting really exists.
                 }
-            }.filterNotNull().collect { payload ->
+            }.filterNotNull().distinctUntilChanged().collect { payload ->
                 latestPayload = payload
                 val origin = if (hasBuiltPayload) SnapshotSendOrigin.WEATHER_UPDATE else SnapshotSendOrigin.INITIAL_LOAD
                 hasBuiltPayload = true

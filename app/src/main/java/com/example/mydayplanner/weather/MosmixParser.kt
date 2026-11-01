@@ -30,19 +30,30 @@ object MosmixParser {
             val currentK = at("TTT", now) ?: error("MOSMIX has no current temperature")
             val futureK = at("TTT", threeHours)
             val gust = at("FX3", threeHours) ?: at("FX1", oneHour) ?: at("FF", now)
-            // RR1c is precipitation over the preceding hour; prefer its 3 upcoming buckets.
-            val hourlyRain = (1..3).mapNotNull { at("RR1c", now.plusSeconds(it * 3600L)) }
-            val rain = hourlyRain.maxOrNull() ?: (at("RR3c", threeHours)?.div(3.0))
+            // RR1c is accumulated rain over the PRECEDING hour, valid at its end.
+            // Include hourly buckets intersecting [now, now+2h], including the
+            // current (partially elapsed) one. MOSMIX cannot resolve 5-min showers.
+            val horizon = now.plusSeconds(WeatherLevels.rainLookaheadHours * 3600)
+            val hourlySamples = times.indices.mapNotNull { index ->
+                val end = times[index]
+                val start = end.minusSeconds(3600)
+                if (end <= now || start >= horizon) null else {
+                    values["RR1c"]?.getOrNull(index)?.let { WeatherLevels.RainSample(it, 60) }
+                }
+            }
+            // A missing RR1c window may be represented by a coarser 3h total.
+            val fallbackRain = if (hourlySamples.isEmpty()) {
+                at("RR3c", threeHours)?.let { listOf(WeatherLevels.RainSample(it, 180)) }
+            } else null
+            val rain = WeatherLevels.peakRainRateMmPerHour(fallbackRain ?: hourlySamples)
             val thunderProbability = at("wwT3", threeHours)
             val currentWeather = at("ww", oneHour)?.toInt()
-            val thunder = if (currentWeather != null && currentWeather in 95..99) 2
-                else if (thunderProbability != null) { if (thunderProbability >= 20.0) 1 else 0 }
-                else null
+            val thunder = WeatherLevels.thunder(currentWeather, thunderProbability)
             return WeatherValues(
                 temperatureC = (currentK - 273.15).roundToInt(),
                 delta3h = futureK?.let { (it - currentK).roundToInt() },
-                rain = rain?.let { when { it >= 3.0 -> 3; it >= 1.0 -> 2; it >= 0.1 -> 1; else -> 0 } },
-                wind = gust?.let { when { it >= 17 -> 3; it >= 10 -> 2; it >= 5 -> 1; else -> 0 } },
+                rain = WeatherLevels.rain(rain),
+                wind = WeatherLevels.wind(gust),
                 thunder = thunder,
                 rawRainMmPerHour = rain,
                 rawGustMetersPerSecond = gust,
@@ -62,13 +73,23 @@ object MosmixParser {
         val rawThunderProbabilityPercent: Double?
     )
 
+    /** DWD catalogue uses degrees.minutes coordinates, NOT decimal degrees. */
+    private fun degreeMinutes(raw: String): Double? {
+        val parts = raw.split('.')
+        if (parts.size != 2 || parts[1].length != 2) return null
+        val degrees = parts[0].toIntOrNull() ?: return null
+        val minutes = parts[1].toIntOrNull() ?: return null
+        if (minutes !in 0..59) return null
+        return (if (raw.startsWith("-")) -1 else 1) * (kotlin.math.abs(degrees) + minutes / 60.0)
+    }
+
     /** DWD catalogue is fixed-column-ish text; names may contain spaces. */
     fun parseStations(text: String): List<Station> {
         val pattern = Regex("""^\s*([A-Za-z0-9]{4,6})\s+\S{4}\s+(.+?)\s+(-?\d{1,2}\.\d+)\s+(-?\d{1,3}\.\d+)\s+-?\d+\s*$""")
         return text.lineSequence().mapNotNull { line ->
             val match = pattern.matchEntire(line) ?: return@mapNotNull null
-            val lat = match.groupValues[3].toDoubleOrNull() ?: return@mapNotNull null
-            val lon = match.groupValues[4].toDoubleOrNull() ?: return@mapNotNull null
+            val lat = degreeMinutes(match.groupValues[3]) ?: return@mapNotNull null
+            val lon = degreeMinutes(match.groupValues[4]) ?: return@mapNotNull null
             Station(match.groupValues[1], match.groupValues[2].trim(), lat, lon)
         }.toList()
     }
